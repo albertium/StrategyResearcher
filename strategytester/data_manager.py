@@ -154,4 +154,4 @@ class DataManager:
 
     def read_tickers_from_db(self, tickers, start_date, end_date):
         data = [self.read_ticker_from_db(ticker, start_date, end_date) for ticker in tickers]
-        return pd.concat(data, axis=1, keys=tickers)
+        return pd.concat(data, axis=1, keys=tickers).reorder_levels([1, 0], axis=1).sort_index(axis=1)
