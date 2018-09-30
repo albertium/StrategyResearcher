@@ -7,11 +7,13 @@ import sqlite3
 import pandas_datareader.data as web
 import pandas_market_calendars as mcal
 import pandas as pd
-from datetime import datetime
+from datetime import date, datetime
 import dateutil.parser as du
+from .utils import rdate, parse_time
 
 
 def process_tiingo(df):
+    df.reset_index(level=0, drop=True, inplace=True)
     df.drop(["open", "high", "low", "close", "volume", "divCash", "splitFactor"], axis=1, inplace=True)
     df.rename(lambda x: x.replace("adj", ""), axis=1, inplace=True)
 
@@ -19,139 +21,152 @@ def process_tiingo(df):
 sources = ["stooq", "tiingo"]
 
 source_map = {
-    "stooq": [".US", None],
-    "tiingo": ["", process_tiingo],
+    "tiingo": ["", None, process_tiingo],
+    "stooq": [".US", None, None],
+    "av-daily": ["", None, None],
+    "iex": ["", rdate("5y"), None]
 }
 
 
 class DataManager:
     def __init__(self, sqlite_file):
         self.sqlite_file = sqlite_file
+        self.epoch = datetime(1989, 2, 19)
 
     def __enter__(self):
         try:
             self.conn = sqlite3.connect(self.sqlite_file)
             self.cur = self.conn.cursor()
+            self.sources = self._get_list_from_db("SourceRank", "source")
+            if set(self.sources) != set(source_map.keys()):
+                raise ValueError("sources and source_map doesn't match")
+
         except sqlite3.Error as e:
             print(e)
             raise ValueError("Failed to establish connection")
 
-        self.initialize_calendar()
-        self.initialize_source_order()
-
+        self._update_calendar()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.conn.close()
 
-    def initialize_calendar(self):
-        nyse = mcal.get_calendar("NYSE")
-        days = nyse.valid_days(start_date="19900101", end_date=datetime.today())
-        self.cur.execute("drop table if exists mcal_US")
-        days.to_series(name="Date").to_sql("mcal_US", con=self.conn, index=False)
-
-    def initialize_source_order(self):
-        self.conn.execute("drop table if exists source_rank")
-        pd.DataFrame({"Source": sources, "Rank": range(len(sources))}).to_sql("source_rank", con=self.conn, index=False)
-
-    def get_data(self, tickers, start_date, end_date):
+    def get_data(self, tickers, start_date, end_date=None):
         # check time input and parse
-        if start_date is None:
-            raise ValueError("start date cannot be none")
         start_date = du.parse(start_date)
         end_date = datetime.today().date() if end_date is None else du.parse(end_date)
 
-        # check data completeness and download if necessary
+        # create table if needed and update
         for ticker in tickers:
-            if not self.is_ticker_complete(ticker, start_date, end_date):
-                for source in sources:
-                    self.download_data(ticker, start_date, end_date, source)
-                    if self.is_ticker_complete(ticker, start_date, end_date):
-                        break
-                else:  # no break
-                    print(f"WARNING: failed to download complete series: {ticker}")
+            self._create_ticker_table(ticker)
+            for source in self.sources:
+                self._update_data_from_web(ticker, source)
+            print(f"Done updating {ticker}\n")
 
-        return self.read_tickers_from_db(tickers, start_date, end_date)
+        return self._read_tickers_from_db(tickers, start_date, end_date)
 
-    def is_ticker_complete(self, ticker, start_date, end_date):
-        if not self.table_exist(ticker):
-            return False
-
-        count = self.cur.execute(f"""
-            select count(*)
-            from mcal_US a
-            left join {ticker} b
-                on a.Date = b.Date
-            where a.Date between ? and ?
-            and b.Date is null
-        """, (start_date, end_date)).fetchone()[0]
-        if count > 0:
-            print(f"{ticker} missing {count} bar(s)", flush=True)
-            return False
-        return True
-
-    def table_exist(self, table_name):
+    def _table_exists(self, table_name):
         res = self.cur.execute("select name from sqlite_master where type='table' AND name=?", (table_name,))
         return res.fetchone() is not None
 
-    def download_data(self, ticker, start_date, end_date, source=None):
+    def _get_last_date_from_db(self, table, source=None):
+        if source is None:
+            tmp = pd.read_sql(f'select max(date) as date from {table}', con=self.conn, parse_dates=["date"]).loc[0][0]
+        else:
+            tmp = pd.read_sql(f"select max(date) as date from {table} where source = '{source}'",
+                              con=self.conn, parse_dates=["date"]).loc[0][0]
+        if tmp is pd.NaT:
+            return self.epoch
+        return tmp
+
+    def _get_list_from_db(self, table, name):
+        tmp = self.cur.execute(f"select {name} from {table}").fetchall()
+        return [x[0] for x in tmp]
+
+    def _create_ticker_table(self, ticker):
+        self.conn.execute(f"""
+            create table if not exists {ticker} (
+                date timestamp,
+                open real,
+                high real,
+                low real,
+                close real,
+                volume integer,
+                source text,
+                primary key(date, source)
+            )
+        """)
+        self.conn.commit()
+
+    def _update_calendar(self):
+        mcal_name = 'MarketCalendarUS'
+
+        # create if not exists
+        self.conn.execute(f'create table if not exists {mcal_name} (date timestamp primary key)')
+        self.conn.commit()
+
+        last_date = self._get_last_date_from_db(mcal_name)
+        if last_date is None:
+            last_date = self.epoch
+
+        # get market dates and insert if needed
+        nyse = mcal.get_calendar("NYSE")
+        dates = nyse.valid_days(start_date=last_date + rdate("1b"), end_date=datetime.today())
+        if len(dates) > 0:  # term
+            dates.to_series(name="date").to_sql(mcal_name, con=self.conn, index=False, if_exists="append")
+
+    def _update_data_from_web(self, ticker, source):
         """
         download and merge data into database
+        start date is the last updated date + 1 and end date is today
         """
-        if source is None:
-            source = sources[0]
+        suffix, relative_limit, processor = source_map[source]
 
-        suffix, processor = source_map[source]
+        # configure start, end dates
+        today = datetime.today()
+        start_date = self._get_last_date_from_db(ticker, source) + rdate("1b")
+        if relative_limit is not None and start_date < today - relative_limit:
+            start_date = today - relative_limit
+        end_date = today
+
+        # check date
+        if start_date > end_date:
+            print(f"{ticker} from '{source}' is up to date")
+            return
+
+        # download data and pre-process if needed
         data = web.DataReader(ticker + suffix, source, start_date, end_date)
         if processor is not None:
             processor(data)
+        data.index = data.index.astype("datetime64[ns]")  # for some sources, string can be return
 
-        print(ticker, " ... downloaded %d bars via %s" % (data.shape[0], source), flush=True)
-        self.insert_data(ticker, source, data)
+        sdate, edate = parse_time(data.index.min()), parse_time(data.index.max())
+        print(f"Downloaded {ticker} from {sdate.date()} to {edate.date()} totally {data.shape[0]:d} bars via {source}",
+              flush=True)
+        data["source"] = source
+        data.to_sql(ticker, con=self.conn, index=True, index_label="date", if_exists="append")
 
-    def insert_data(self, ticker, source, df):
-        df["Source"] = source
-        if self.table_exist(ticker):
-            self.conn.execute("drop table if exists tmp")
-            df.to_sql("tmp", con=self.conn, index=True)
-
-            stmt = f"""
-                insert into {ticker} (Date, Open, High, Low, Close, Volume, Source)
-                select a.Date, a.Open, a.High, a.Low, a.Close, a.Volume, a.Source
-                from tmp a left join {ticker} b
-                    on a.Date = b.Date
-                    and a.Source = b.Source
-                where
-                    b.Date is null"""
-            try:
-                with self.conn:
-                    self.conn.execute(stmt)
-            except sqlite3.IntegrityError:
-                print(f"SQL: can't insert new rows to {ticker}")
-        else:
-            df.to_sql(ticker, con=self.conn, index=True)
-
-    def read_ticker_from_db(self, ticker, start_date, end_date):
+    def _read_ticker_from_db(self, ticker, start_date, end_date):
         if not isinstance(ticker, str):
             raise ValueError(f"ticker should be string instead of {type(ticker)}")
 
         stmt = f"""
         with tmp as (
             select a.*, b.rank 
-            from {ticker} a inner join source_rank b 
-                on a.Source = b.Source
+            from {ticker} a inner join SourceRank b 
+                on a.source = b.source
         ) 
-        select a.Date, a.Open, a.High, a.Low, a.Close, a.Volume
+        select a.date, a.open, a.high, a.low, a.close, a.volume
         from tmp a 
             inner join (
-                select Date, min(Rank) as Rank 
+                select date, min(rank) as rank 
                 from tmp 
-                where Date between '{start_date}' and '{end_date}' 
-                group by Date
+                where date between '{start_date}' and '{end_date}' 
+                group by date
             ) b 
-            on a.Date = b.Date and a.Rank = b.Rank"""
-        return pd.read_sql(stmt, con=self.conn, index_col="Date", parse_dates=["Date"])
+            on a.date = b.date and a.rank = b.rank"""
+        return pd.read_sql(stmt, con=self.conn, index_col="date", parse_dates=["date"])
 
-    def read_tickers_from_db(self, tickers, start_date, end_date):
-        data = [self.read_ticker_from_db(ticker, start_date, end_date) for ticker in tickers]
+    def _read_tickers_from_db(self, tickers, start_date, end_date):
+        data = [self._read_ticker_from_db(ticker, start_date, end_date) for ticker in tickers]
         return pd.concat(data, axis=1, keys=tickers).reorder_levels([1, 0], axis=1).sort_index(axis=1)
