@@ -9,7 +9,7 @@ import pandas_market_calendars as mcal
 import pandas as pd
 from datetime import date, datetime
 import dateutil.parser as du
-from .utils import rdate, parse_time
+from strategytester.utils import rdate, parse_time
 
 
 def process_tiingo(df):
@@ -60,7 +60,10 @@ class DataManager:
         for ticker in tickers:
             self._create_ticker_table(ticker)
             for source in self.sources:
-                self._update_data_from_web(ticker, source)
+                try:
+                    self._update_data_from_web(ticker, source)
+                except:
+                    print(f"Failed to retrieve {ticker} from {source}")
             print(f"Done updating {ticker}\n")
 
         return self._read_tickers_from_db(tickers, start_date, end_date)
@@ -123,7 +126,7 @@ class DataManager:
         suffix, relative_limit, processor = source_map[source]
 
         # configure start, end dates
-        today = datetime.today()
+        today = datetime.today() - rdate("1b")
         start_date = self._get_last_date_from_db(ticker, source) + rdate("1b")
         if relative_limit is not None and start_date < today - relative_limit:
             start_date = today - relative_limit
