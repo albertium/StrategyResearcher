@@ -7,8 +7,7 @@ from queue import Queue
 
 class SimulatedExecutionHandler(ExecutionHandler):
     def __init__(self, data: DataHandler, events: Queue):
-        self.data = data
-        self.events = events
+        super().__init__(data, events)
 
     def execute_order(self, event: OrderEvent):
         fill = FillEvent(self.data.now(), event.strategy_id, event.ticker, "SIM", event.quantity,

@@ -5,10 +5,9 @@ handle data
 
 import sqlite3
 import pandas_datareader.data as web
+from pandas_datareader.stooq import StooqDailyReader
 import pandas_market_calendars as mcal
 import pandas as pd
-from datetime import date, datetime
-import dateutil.parser as du
 from strategytester.utils import rdate, parse_time
 
 
@@ -17,8 +16,6 @@ def process_tiingo(df):
     df.drop(["open", "high", "low", "close", "volume", "divCash", "splitFactor"], axis=1, inplace=True)
     df.rename(lambda x: x.replace("adj", ""), axis=1, inplace=True)
 
-
-sources = ["stooq", "tiingo"]
 
 source_map = {
     "tiingo": ["", None, process_tiingo],
@@ -31,7 +28,7 @@ source_map = {
 class DataManager:
     def __init__(self, sqlite_file):
         self.sqlite_file = sqlite_file
-        self.epoch = datetime(1989, 2, 19)
+        self.epoch = pd.Timestamp(1989, 2, 19)
 
     def __enter__(self):
         try:
@@ -53,8 +50,8 @@ class DataManager:
 
     def get_data(self, tickers, start_date, end_date=None):
         # check time input and parse
-        start_date = du.parse(start_date)
-        end_date = datetime.today().date() if end_date is None else du.parse(end_date)
+        start_date = pd.Timestamp(start_date)
+        end_date = pd.Timestamp.today().date() if end_date is None else pd.Timestamp(end_date)
 
         # create table if needed and update
         for ticker in tickers:
@@ -62,7 +59,8 @@ class DataManager:
             for source in self.sources:
                 try:
                     self._update_data_from_web(ticker, source)
-                except:
+                except Exception as e:
+                    print(e)
                     print(f"Failed to retrieve {ticker} from {source}")
             print(f"Done updating {ticker}\n")
 
@@ -114,7 +112,7 @@ class DataManager:
 
         # get market dates and insert if needed
         nyse = mcal.get_calendar("NYSE")
-        dates = nyse.valid_days(start_date=last_date + rdate("1b"), end_date=datetime.today())
+        dates = nyse.valid_days(start_date=last_date + rdate("1b"), end_date=pd.Timestamp.today())
         if len(dates) > 0:  # term
             dates.to_series(name="date").to_sql(mcal_name, con=self.conn, index=False, if_exists="append")
 
@@ -126,7 +124,7 @@ class DataManager:
         suffix, relative_limit, processor = source_map[source]
 
         # configure start, end dates
-        today = datetime.today() - rdate("1b")
+        today = pd.Timestamp.today() - rdate("1b")
         start_date = self._get_last_date_from_db(ticker, source) + rdate("1b")
         if relative_limit is not None and start_date < today - relative_limit:
             start_date = today - relative_limit
@@ -138,7 +136,10 @@ class DataManager:
             return
 
         # download data and pre-process if needed
-        data = web.DataReader(ticker + suffix, source, start_date, end_date)
+        if source == "stooq":
+            data = StooqDailyReader(ticker + suffix, start_date, end_date).read()
+        else:
+            data = web.DataReader(ticker + suffix, source, start_date, end_date)
         if processor is not None:
             processor(data)
         data.index = data.index.astype("datetime64[ns]")  # for some sources, string can be return

@@ -25,10 +25,23 @@ class MarketEvent(Event):
 
 
 class SignalEvent(Event):
-    def __init__(self, strategy_id, signals):
+    def __init__(self, strategy_id, tickers):
         super().__init__(EventType.SIGNAL)
         self.strategy_id = strategy_id
-        self.signals = signals
+        self.tickers = tickers
+        self.signals = {ticker: 0 for ticker in self.tickers}  # type: dict
+
+    def __setitem__(self, key, value):
+        self.signals[key] = value
+
+    def __str__(self):
+        text = ""
+        for k, v in self.signals.items():
+            text += f"{k}: {v}\n"
+        return text
+
+    def __repr__(self):
+        return self.__str__()
 
 
 class OrderEvent(Event):
@@ -40,11 +53,11 @@ class OrderEvent(Event):
         self.strategy_id = strategy_id
         self.ticker = ticker
         self.order_type = order_type
-        self.direction = Direction.BUY if quantity > 0 else Direction.SELL
-        self.quantity = abs(quantity)
+        self.direction = Direction.BUY if quantity > 0 else Direction.SELL  # this is only used in print out
+        self.quantity = quantity
 
     def __str__(self):
-        return f"{self.direction.name} {self.quantity:d} {self.ticker}"
+        return f"{self.direction.name} {abs(self.quantity): d} {self.ticker}"
 
     def __repr__(self):
         return self.__str__()
@@ -60,3 +73,9 @@ class FillEvent(Event):
         self.quantity = quantity
         self.price = price
         self.commission = commission
+
+    def __str__(self):
+        return f"Filled {self.quantity} {self.ticker} for strategy {self.strategy_id} at {self.timestamp}"
+
+    def __repr__(self):
+        return self.__str__()

@@ -2,15 +2,13 @@
 from .data_handler import DataHandler
 from .data_manager import DataManager
 from ..event import MarketEvent
+from queue import Queue
+from typing import List
 
 
 class HistoricalDataHandler(DataHandler):
-    def __init__(self, events, tickers, start_date, end_date):
-        super().__init__()
-        self.events = events
-        self.tickers = tickers
-        self.start_date = start_date
-        self.end_date = end_date
+    def __init__(self, events: Queue, tickers: List, start_date, end_date):
+        super().__init__(events, tickers, start_date, end_date)
 
         with DataManager("data/test.db") as dm:
             self.__data = dm.get_data(tickers, start_date, end_date)
@@ -37,3 +35,4 @@ class HistoricalDataHandler(DataHandler):
         self.low = self.__low.iloc[:self.index_row, :]
         self.close = self.__close.iloc[:self.index_row, :]
         self.events.put(MarketEvent())
+        return True

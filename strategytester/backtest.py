@@ -3,13 +3,20 @@ import queue
 import pandas as pd
 from .event import EventType, SignalEvent
 from .data import DataHandler
-from typing import Type
+from .execution import ExecutionHandler
+from .strategy import Strategy
+from .portfolio import Portfolio
+from typing import Type, List
 
 
 class BackTest:
-    def __init__(self, strategy_classes, portfolio_class, data_handler_class: Type[DataHandler],
-                 execution_handler_class):
-        self.strategy_classes = strategy_classes
+    def __init__(self,
+                 strategy_class:          Type[Strategy],
+                 portfolio_class:           Type[Portfolio],
+                 data_handler_class:        Type[DataHandler],
+                 execution_handler_class:   Type[ExecutionHandler]):
+
+        self.strategy_class = strategy_class
         self.portfolio_class = portfolio_class
         self.data_handler_class = data_handler_class
         self.execution_handler_class = execution_handler_class
@@ -51,10 +58,9 @@ class BackTest:
                     break  # non-blocking queue returns Empty error
 
                 if event.type == EventType.MARKET:
-                    signal = {ticker: 0 for ticker in self.tickers}
-                    for strategy in self.strategies:
-                        signal = strategy.calcualte_signal(signal)
-                    self.events.put(SignalEvent(1, signal))
+                    signal = SignalEvent(1, self.tickers)
+                    self.strategy.calculate_signal(signal)
+                    self.portfolio.take_snapshot()
                 elif event.type == EventType.SIGNAL:
                     self.portfolio.submit_order(event)
                 elif event.type == EventType.ORDER:
@@ -64,7 +70,7 @@ class BackTest:
 
     def _initialize_trading_instance(self):
         self.data_handler = self.data_handler_class(self.events, self.tickers, self.start_date, self.end_date)
-        self.strategies = [cls(self.data_handler) for cls in self.strategy_classes]
-        self.portfolio = self.portfolio_class(self.events, self.data_handler, self.initial_capital)
-        self.execution_handler = self.execution_handler_class(self.events)
+        self.strategy = self.strategy_class(self.events, self.data_handler)
+        self.portfolio = self.portfolio_class(self.data_handler, self.events, self.initial_capital)
+        self.execution_handler = self.execution_handler_class(self.data_handler, self.events)
 

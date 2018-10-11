@@ -4,9 +4,9 @@ from strategytester.strategy import MomentumStrategy
 from strategytester.execution import SimulatedExecutionHandler
 from strategytester import BackTest, Portfolio
 
-bt = BackTest([MomentumStrategy], Portfolio, HistoricalDataHandler, SimulatedExecutionHandler)
+bt = BackTest(MomentumStrategy, Portfolio, HistoricalDataHandler, SimulatedExecutionHandler)
 bt.set_tickers(["CWI", "HYG", "IAU", "ITB", "SMH", "TLT", "VGK", "VOO", "XBI", "XLI", "XLV"])
-bt.set_dates("2016-01-01", "2017-01-01")
+bt.set_dates("2016-01-01", "2017-02-01")
 bt.set_capital(10000)
 bt.run()
 
