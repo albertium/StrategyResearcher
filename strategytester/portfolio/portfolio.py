@@ -5,6 +5,7 @@ from .trade_record import TradeRecord
 from ..event import SignalEvent,FillEvent
 from ..data import DataHandler
 from queue import Queue
+from typing import Dict
 
 
 class Portfolio:
@@ -18,11 +19,11 @@ class Portfolio:
     def submit_order(self, signal_event: SignalEvent):
         sid = signal_event.strategy_id
         if sid not in self.positions:
-            self.positions[sid] = TradeRecord(self.initial_capital, signal_event.tickers)
+            self.positions[sid] = TradeRecord(self.data.now(), self.initial_capital, signal_event.tickers)
         positions = self.positions[sid]
 
         # equal weight sizing
-        fund_per_alpha = positions.get_total_holding() / sum([abs(x) for x in signal_event.signals.values()])
+        fund_per_alpha = positions.get_equity() / sum([abs(x) for x in signal_event.signals.values()])
 
         # TODO: this assumes order will be fully filled. Partially filled hanging order need to be dealt with later
         # TODO: also, quantity may cause overflow if not instantly filled
@@ -50,3 +51,6 @@ class Portfolio:
         for position in self.positions.values():
             position.take_snapshot(self.data.now(), prices)
             print(f"\n{position}\n", flush=True)
+
+    def get_history(self, strategy_id):
+        return self.positions[strategy_id].get_history()

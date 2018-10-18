@@ -1,4 +1,7 @@
 
+import pandas as pd
+
+
 class Datum:
     def __init__(self, quantity, price):
         self.quantity = quantity
@@ -19,20 +22,20 @@ class Datum:
 
 
 class TradeRecord:
-    def __init__(self, initial_capital, tickers):
+    def __init__(self, timestamp, initial_capital, tickers):
         self.cash = initial_capital
         self.tickers = tickers
         self.positions = {ticker: 0 for ticker in tickers}
         self.commissions = {ticker: 0 for ticker in tickers}
         self.snapshots = []
-        self.take_snapshot(-1, {ticker: 0 for ticker in tickers})
+        self.take_snapshot(timestamp, {ticker: 0 for ticker in tickers})
 
     def __str__(self):
         if len(self.snapshots) == 0:
-            return f"Total: {self.cash}"
+            return f"Equity: {self.cash}"
         last_rec = self.snapshots[-1]
         expr = "SNAPSHOT\n"
-        expr += f"Timestamp: {last_rec['timestamp']} Total: {last_rec['total']} Commissions: {last_rec['commission']}\n"
+        expr += f"Timestamp: {last_rec['timestamp']} Equity: {last_rec['equity']} Commissions: {last_rec['commission']}\n"
         expr += "\n".join([f"{k}: {v.quantity}" for k, v in last_rec['asset'].items() if v.quantity != 0])
         return expr
 
@@ -50,8 +53,12 @@ class TradeRecord:
         self.cash -= delta
         self.commissions[ticker] += commission
 
-    def get_total_holding(self):
-        return self.snapshots[-1]["total"]
+    def get_equity(self):
+        return self.snapshots[-1]["equity"]
+
+    def get_history(self) -> pd.DataFrame:
+        data = [{'date': rec['timestamp'], 'equity': rec['equity']} for rec in self.snapshots]
+        return pd.DataFrame(data).set_index('date')
 
     def take_snapshot(self, timestamp, prices):
         # snapshot of market values
@@ -61,5 +68,5 @@ class TradeRecord:
             'timestamp': timestamp
         }
         record['cash'] = self.cash - record['commission']
-        record['total'] = sum(record['asset'].values()) + record['cash']
+        record['equity'] = sum(record['asset'].values()) + record['cash']
         self.snapshots.append(record)

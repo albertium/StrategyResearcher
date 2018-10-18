@@ -1,6 +1,6 @@
 
-from strategytester.strategy.strategy import Strategy
-from strategytester.data import DataHandler
+from ..strategy import Strategy
+from ..data import DataHandler
 import numpy as np
 from queue import Queue
 

@@ -55,7 +55,7 @@ class BackTest:
                 try:
                     event = self.events.get(block=False)
                 except queue.Empty:
-                    break  # non-blocking queue returns Empty error
+                    break
 
                 if event.type == EventType.MARKET:
                     signal = SignalEvent(1, self.tickers)
@@ -67,6 +67,9 @@ class BackTest:
                     self.execution_handler.execute_order(event)
                 elif event.type == EventType.FILL:
                     self.portfolio.handle_fill(event)
+
+        result = self.portfolio.get_history(1)
+        print(result)
 
     def _initialize_trading_instance(self):
         self.data_handler = self.data_handler_class(self.events, self.tickers, self.start_date, self.end_date)

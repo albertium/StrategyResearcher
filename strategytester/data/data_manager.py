@@ -28,7 +28,7 @@ source_map = {
 class DataManager:
     def __init__(self, sqlite_file):
         self.sqlite_file = sqlite_file
-        self.epoch = pd.Timestamp(1989, 2, 19)
+        self.epoch = pd.Timestamp(1970, 2, 19)
 
     def __enter__(self):
         try:
@@ -43,6 +43,7 @@ class DataManager:
             raise ValueError("Failed to establish connection")
 
         self._update_calendar()
+        self._ensure_trial_table()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -116,11 +117,40 @@ class DataManager:
         if len(dates) > 0:  # term
             dates.to_series(name="date").to_sql(mcal_name, con=self.conn, index=False, if_exists="append")
 
-    def _update_data_from_web(self, ticker, source):
+    def _ensure_trial_table(self):
+        self.conn.execute('''
+            create table if not exists trials (
+                ticker text,
+                source text,
+                count integer default 0,
+                primary key(ticker, source)
+            )
+        ''')
+        self.conn.commit()
+
+    def _get_number_of_trials(self, ticker, source):
+        self.cur.execute(f"select count from trials where ticker = '{ticker}' and source = '{source}'")
+        res = self.cur.fetchone()
+        if res is None:
+            self.conn.execute("insert into trials (ticker, source, count) values(?, ?, ?)", (ticker, source, 0))
+            self.conn.commit()
+            return 0
+        return res[0]
+
+    def _increment_trial_count(self, ticker, source):
+        self.conn.execute(f"update trials set count = count + 1 where ticker = '{ticker}' and source = '{source}'")
+        self.conn.commit()
+
+    def _update_data_from_web(self, ticker, source) -> None:
         """
         download and merge data into database
         start date is the last updated date + 1 and end date is today
         """
+
+        # check if source is available for the ticker
+        if self._get_number_of_trials(ticker, source) > 3:
+            print(f'{ticker} from {source} is skipped', flush=True)
+            return
         suffix, relative_limit, processor = source_map[source]
 
         # configure start, end dates
@@ -132,14 +162,20 @@ class DataManager:
 
         # check date
         if start_date > end_date:
-            print(f"{ticker} from '{source}' is up to date")
             return
 
         # download data and pre-process if needed
         if source == "stooq":
             data = StooqDailyReader(ticker + suffix, start_date, end_date).read()
+            if data.shape[0] == 0:
+                self._increment_trial_count(ticker, source)
+                return
         else:
-            data = web.DataReader(ticker + suffix, source, start_date, end_date)
+            try:
+                data = web.DataReader(ticker + suffix, source, start_date, end_date)
+            except KeyError:
+                self._increment_trial_count(ticker, source)
+                return
         if processor is not None:
             processor(data)
         data.index = data.index.astype("datetime64[ns]")  # for some sources, string can be return
