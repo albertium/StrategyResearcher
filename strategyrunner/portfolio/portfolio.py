@@ -1,15 +1,16 @@
 
-from strategytester.event import OrderEvent
+from strategyrunner.event import OrderEvent
 from ..execution import OrderType
 from .trade_record import TradeRecord
 from ..event import SignalEvent,FillEvent
 from ..data import DataHandler
+from ..logging import Logger
 from queue import Queue
-from typing import Dict
 
 
 class Portfolio:
-    def __init__(self, data: DataHandler, events: Queue, start_date, initial_capital=10000):
+    def __init__(self, logger: Logger, data: DataHandler, events: Queue, start_date, initial_capital=10000):
+        self.logger = logger
         self.data = data
         self.events = events
         self.start_date = start_date
@@ -34,23 +35,21 @@ class Portfolio:
             if delta != 0:
                 orders.append([delta, pos, ticker])
 
-        print(f"Submit order: {self.data.now()}")
         orders = sorted(orders)
         for [quantity, pos, ticker] in orders:
             order = OrderEvent(sid, ticker, OrderType.LMT, quantity)
             self.events.put(order)
-            print(f"{order} ({positions[ticker]} -> {pos})", flush=True)
-        print()
+            self.logger.log_info(f"{order} ({positions[ticker]} -> {pos})")
 
     def handle_fill(self, fill: FillEvent):
-        print(fill)
+        self.logger.log_info(fill)
         self.positions[fill.strategy_id].update(fill.ticker, fill.quantity, fill.price, fill.commission)
 
     def take_snapshot(self):
         prices = self.data.get_closes()
         for position in self.positions.values():
             position.take_snapshot(self.data.now(), prices)
-            print(f"\n{position}\n", flush=True)
+            self.logger.log_info(f"\n{position}\n")
 
     def get_history(self, strategy_id):
         return self.positions[strategy_id].get_history()

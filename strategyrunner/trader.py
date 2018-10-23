@@ -6,10 +6,12 @@ from .data import DataHandler
 from .execution import ExecutionHandler
 from .strategy import Strategy
 from .portfolio import Portfolio
-from typing import Type, List
+from typing import Type
+from .logging import Logger
+import time
 
 
-class BackTest:
+class Trader:
     def __init__(self,
                  strategy_class:          Type[Strategy],
                  portfolio_class:           Type[Portfolio],
@@ -21,6 +23,7 @@ class BackTest:
         self.data_handler_class = data_handler_class
         self.execution_handler_class = execution_handler_class
 
+        self.logger = Logger()
         self.events = queue.Queue()
         self.tickers = None
         self.start_date = None
@@ -37,7 +40,14 @@ class BackTest:
     def set_capital(self, initial_capital):
         self.initial_capital = initial_capital
 
-    def run(self):
+    def simulated_trade(self):
+        pass
+
+    def live_trade(self):
+        pass
+
+    def _run(self):
+        tmp = 0
         # check if necessary vales are set
         if self.tickers is None:
             raise ValueError("Tickers are not set")
@@ -50,7 +60,9 @@ class BackTest:
 
         # main run
         self._initialize_trading_instance()
+
         while self.data_handler.update_bar():
+            start = time.clock()
             while True:
                 try:
                     event = self.events.get(block=False)
@@ -67,13 +79,15 @@ class BackTest:
                     self.execution_handler.execute_order(event)
                 elif event.type == EventType.FILL:
                     self.portfolio.handle_fill(event)
+            tmp += time.clock() - start
 
         result = self.portfolio.get_history(1)
-        print(result)
+        self.logger.log_info(result)
+        self.logger.close()
 
     def _initialize_trading_instance(self):
-        self.data_handler = self.data_handler_class(self.events, self.tickers, self.start_date, self.end_date)
-        self.strategy = self.strategy_class(self.events, self.data_handler)
-        self.portfolio = self.portfolio_class(self.data_handler, self.events, self.initial_capital)
-        self.execution_handler = self.execution_handler_class(self.data_handler, self.events)
-
+        self.data_handler = self.data_handler_class(self.logger, self.events, self.tickers, self.start_date, self.end_date)
+        self.logger.set_timer(self.data_handler)  # only suitable for backtesting
+        self.strategy = self.strategy_class(self.logger, self.events, self.data_handler)
+        self.portfolio = self.portfolio_class(self.logger, self.data_handler, self.events, self.initial_capital)
+        self.execution_handler = self.execution_handler_class(self.logger, self.data_handler, self.events)

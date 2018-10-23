@@ -8,7 +8,7 @@ import pandas_datareader.data as web
 from pandas_datareader.stooq import StooqDailyReader
 import pandas_market_calendars as mcal
 import pandas as pd
-from strategytester.utils import rdate, parse_time
+from strategyrunner.utils import rdate, parse_time
 
 
 def process_tiingo(df):

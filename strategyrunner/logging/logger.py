@@ -1,5 +1,6 @@
 
 import queue
+from pandas import Timestamp
 from threading import Lock
 import os
 from pathlib import Path
@@ -8,10 +9,10 @@ from .sink import Sink, SinkLevel
 
 
 class Logger:
-    def __init__(self):
+    def __init__(self, timer=Timestamp):
         self.cache = queue.Queue()
         self.lock = Lock()
-        self.timer = None
+        self.timer = timer
         base_dir = Path(os.getcwd()) / 'logs'
         self.sinks = [
             Sink(SinkLevel.CRITICAL),
@@ -24,6 +25,7 @@ class Logger:
         self.timer = timer
 
     def close(self):
+        self._flush()
         for sink in self.sinks:
             sink.close()
 
@@ -38,7 +40,7 @@ class Logger:
 
     def _log(self, level, msg):
         self.cache.put(Log(self.timer.now(), level, msg))
-        self._flush()
+        # self._flush()
 
     def _flush(self):
         if self.lock.acquire(blocking=False):

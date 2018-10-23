@@ -1,7 +1,6 @@
 
-import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 
 def append_returns(df, days):

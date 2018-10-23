@@ -23,6 +23,9 @@ class MarketEvent(Event):
     def __init__(self):
         super().__init__(EventType.MARKET)
 
+    def __repr__(self):
+        return "Data arrived"
+
 
 class SignalEvent(Event):
     def __init__(self, strategy_id, tickers):

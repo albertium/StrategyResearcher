@@ -1,7 +1,6 @@
 
 from pandas.tseries.offsets import DateOffset, BDay
 import dateutil.parser as du
-from datetime import datetime
 
 
 def rdate(period):

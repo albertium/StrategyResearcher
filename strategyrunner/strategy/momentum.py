@@ -1,13 +1,10 @@
 
 from ..strategy import Strategy
-from ..data import DataHandler
 import numpy as np
-from queue import Queue
 
 
 class MomentumStrategy(Strategy):
-    def __init__(self, events: Queue, data: DataHandler):
-        super().__init__(events, data)
+    def _setup(self):
         self.look_back = self.period = 120
         self.top = 3
 
@@ -17,4 +14,3 @@ class MomentumStrategy(Strategy):
         for ticker in signal.tickers:
             signal[ticker] = int(selected[ticker])
         return signal
-
