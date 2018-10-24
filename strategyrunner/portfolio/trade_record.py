@@ -1,5 +1,6 @@
 
 import pandas as pd
+import numpy as np
 
 
 class Datum:
@@ -70,3 +71,12 @@ class TradeRecord:
         record['cash'] = self.cash - record['commission']
         record['equity'] = sum(record['asset'].values()) + record['cash']
         self.snapshots.append(record)
+
+    def get_sharpe_ratio(self):
+        ts = self._get_equity_curve()
+        mean = np.power(ts[-1] / ts[0], 252 / len(ts)) - 1
+        std = np.std(ts[1:] / ts[:-1]) * np.sqrt(252)
+        return mean / std
+
+    def _get_equity_curve(self):
+        return np.array([rec['equity'] for rec in self.snapshots])

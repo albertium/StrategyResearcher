@@ -51,5 +51,5 @@ class Portfolio:
             position.take_snapshot(self.data.now(), prices)
             self.logger.log_info(f"\n{position}\n")
 
-    def get_history(self, strategy_id):
-        return self.positions[strategy_id].get_history()
+    def get_history(self, strategy_id) -> TradeRecord:
+        return self.positions[strategy_id]

@@ -82,7 +82,7 @@ class Trader:
             tmp += time.clock() - start
 
         result = self.portfolio.get_history(1)
-        self.logger.log_info(result)
+        print(f'Sharpe Ratio: {result.get_sharpe_ratio()}')
         self.logger.close()
 
     def _initialize_trading_instance(self):

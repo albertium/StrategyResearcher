@@ -15,7 +15,7 @@ class Strategy(ABC):
         self._setup()  # for user initializationt
 
     def calculate_signal(self, signal: SignalEvent):
-        if 0 < self.look_back <= len(self.data.close):
+        if self.look_back < 0 or len(self.data.close) >= self.look_back:
             self.events.put(self._calculate_signal(signal))
 
     @abstractmethod
