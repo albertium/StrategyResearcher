@@ -1,9 +1,9 @@
 
-from strategyrunner.data import DataManager, HistoricalDataHandler
-from strategyrunner.strategy import MomentumStrategy, BuyAndHold
-from strategyrunner.execution import SimulatedExecutionHandler
-from strategyrunner import Trader, Portfolio
-import time
+# from strategyrunner.data import DataManager, HistoricalDataHandler
+# from strategyrunner.strategy import MomentumStrategy, BuyAndHold
+# from strategyrunner.execution import SimulatedExecutionHandler
+# from strategyrunner import Trader, Portfolio
+# import time
 
 # # bt = Trader(MomentumStrategy, Portfolio, HistoricalDataHandler, SimulatedExecutionHandler)
 # bt = Trader(BuyAndHold, Portfolio, HistoricalDataHandler, SimulatedExecutionHandler)
@@ -16,8 +16,26 @@ import time
 # print("total: ", time.clock() - start, "s\n")
 
 
-with DataManager("data/test.db") as dm:
-    # data = dm.get_data(["CWI", "HYG", "IAU", "ITB", "SMH", "TLT", "VGK", "VOO", "XBI", "XLI", "XLV", "IGSB"], "2016-01-01", "2017-02-28")
-    data = dm.get_data(["AAPL"], "1988-08-01", "2018-10-01")
+# with DataManager("data/test.db") as dm:
+#     # data = dm.get_data(["CWI", "HYG", "IAU", "ITB", "SMH", "TLT", "VGK", "VOO", "XBI", "XLI", "XLV", "IGSB"], "2016-01-01", "2017-02-28")
+#     data = dm.get_data(["AAPL"], "1988-08-01", "2018-10-01")
+#
+# print(data.head())
 
-print(data.head())
+from strategyrunner.server import Server
+import zmq
+
+
+class Test:
+    @Server.service(zmq.REP, 5555)
+    def test(self, socket: zmq.sugar.socket.Socket):
+        msg = socket.recv_string()
+        print(msg)
+        socket.send_string("received")
+
+    def run(self):
+        self.test()
+
+
+test = Test()
+test.run()
