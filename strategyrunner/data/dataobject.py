@@ -2,10 +2,11 @@
 from abc import ABC, abstractmethod
 import zmq
 import pandas as pd
-from ..service import Service, ServiceType
+
+from strategyrunner.async_agent import AsyncAgent
 
 
-class DataObject(Service, ABC):
+class DataObject(ABC):
     def __init__(self, data_source):
         self.open = None
         self.high = None
@@ -50,7 +51,7 @@ class HistoricalDataObject(DataObject):
         return True
 
 
-class RealTimeDataObject(DataObject):
+class RealTimeDataObject(DataObject, AsyncAgent):
     def __init__(self, data_source):
         super().__init__(data_source)
 
@@ -58,6 +59,5 @@ class RealTimeDataObject(DataObject):
         price = await self._update_bar()
         print(price)
 
-    @Service.service(ServiceType.Client, zmq.SUB, 5558)
-    async def _update_bar(self, socket: zmq.sugar.socket.Socket):
+    async def _update_bar(self):
         pass
