@@ -22,8 +22,36 @@
 #
 # print(data.head())
 
-from strategyrunner.data import DataServer
+import zmq
+import zmq.asyncio as zmqa
+import asyncio
+import json
 
 
-server = DataServer()
-server.run()
+async def server():
+    socket = zmqa.Context().socket(zmq.PUB)
+    socket.bind(f'tcp://127.0.0.1:4002')
+
+    while True:
+        await socket.send_multipart([b'A', b'', json.dumps({'a': 1}).encode()])
+        await socket.send_multipart([b'B', b'', json.dumps({'b': 1}).encode()])
+        await socket.send_multipart([b'C', b'', json.dumps({'c': 1}).encode()])
+        print('sent')
+        await asyncio.sleep(1)
+
+
+async def client():
+    socket = zmqa.Context().socket(zmq.SUB)
+    socket.setsockopt(zmq.SUBSCRIBE, [b'A', b'B'])
+    # socket.setsockopt(zmq.SUBSCRIBE, b'B')
+    socket.connect(f'tcp://127.0.0.1:4002')
+
+    while True:
+        [topic, _, msg] = await socket.recv_multipart()
+        msg = json.loads(msg.decode())
+        print(msg)
+
+
+asyncio.ensure_future(server())
+asyncio.ensure_future(client())
+asyncio.get_event_loop().run_forever()

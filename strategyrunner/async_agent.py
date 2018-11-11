@@ -3,12 +3,14 @@ import asyncio
 import signal
 from abc import ABC, abstractmethod
 import traceback
+import threading
 
 
 class AsyncAgent(ABC):
     def __init__(self):
         self.loop = asyncio.get_event_loop()
         self.futures = None
+        self.events = []
 
     @abstractmethod
     def _run(self):
@@ -24,6 +26,11 @@ class AsyncAgent(ABC):
 
     async def shutdown(self):
         print('Shutting down agent')
+
+        # set all the threading.Event to true so that the outside loop can finish
+        for event in self.events:
+            event.set()
+
         for task in asyncio.Task.all_tasks():
             if task is not asyncio.Task.current_task():
                 task.cancel()
@@ -42,3 +49,14 @@ class AsyncAgent(ABC):
         finally:
             print(f'Agent shut down')
             self.loop.stop()
+
+    def run_in_fork(self, signals=None):
+        if signals is None:
+            signals = [signal.SIGINT]
+
+        for sig in signals:
+            self.loop.add_signal_handler(sig, lambda s=sig: asyncio.run_coroutine_threadsafe(self.shutdown(), self.loop))
+
+        self.futures = [asyncio.run_coroutine_threadsafe(self.handle_exception(coro), self.loop)
+                        for coro in self._run()]
+        threading.Thread(target=self.loop.run_forever).start()

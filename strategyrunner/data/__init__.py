@@ -1,6 +1,6 @@
 
 from .data_manager import DataManager
 from .data_handler import DataHandler
-from .dataobject import DataObject, HistoricalDataObject, RealTimeDataObject
+from .data_object import DataObject, HistoricalDataObject, RealTimeDataObject, Dispatcher
 from .historical_data_handler import HistoricalDataHandler
-from .dataserver import DataServer, HistoricalDataRequest, RealTimeDataRequest
+from .data_server import DataServer, HistoricalDataRequest, RealTimeDataRequest

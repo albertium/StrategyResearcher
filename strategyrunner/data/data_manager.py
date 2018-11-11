@@ -32,6 +32,7 @@ class DataManager:
 
     def __enter__(self):
         try:
+            print(self.sqlite_file)
             self.conn = sqlite3.connect(self.sqlite_file)
             self.cur = self.conn.cursor()
             self.sources = self._get_list_from_db("SourceRank", "source")
