@@ -16,13 +16,26 @@ class AsyncAgent(ABC):
     def _run(self):
         raise NotImplementedError
 
-    async def handle_exception(self, coro):
-        try:
-            await coro
-        except Exception as e:
-            print(f'Caught exceptions')
-            traceback.print_exc()
-            await self.shutdown()
+    async def await_coroutine(self, coro, msg=''):
+        if msg:
+            print(msg)
+
+        while True:
+            try:
+                await coro()
+            except Exception as e:
+                print('Caught exceptions:')
+                traceback.print_exc()
+
+    def start_task(self, coro):
+        async def wrapper():
+            try:
+                await coro
+            except Exception as e:
+                print('Caught exceptions:')
+                traceback.print_exc()
+
+        asyncio.ensure_future(wrapper())
 
     async def shutdown(self):
         print('Shutting down agent')
@@ -44,7 +57,7 @@ class AsyncAgent(ABC):
             self.loop.add_signal_handler(sig, lambda s=sig: asyncio.ensure_future(self.shutdown()))
 
         try:
-            self.futures = [asyncio.ensure_future(self.handle_exception(coro)) for coro in self._run()]
+            self.futures = [asyncio.ensure_future(self.await_coroutine(coro, msg)) for coro, msg in self._run()]
             self.loop.run_forever()
         finally:
             print(f'Agent shut down')
@@ -57,6 +70,6 @@ class AsyncAgent(ABC):
         for sig in signals:
             self.loop.add_signal_handler(sig, lambda s=sig: asyncio.run_coroutine_threadsafe(self.shutdown(), self.loop))
 
-        self.futures = [asyncio.run_coroutine_threadsafe(self.handle_exception(coro), self.loop)
-                        for coro in self._run()]
+        self.futures = [asyncio.run_coroutine_threadsafe(self.await_coroutine(coro, msg), self.loop)
+                        for coro, msg in self._run()]
         threading.Thread(target=self.loop.run_forever).start()

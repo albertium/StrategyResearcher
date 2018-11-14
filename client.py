@@ -17,14 +17,17 @@ def request(cid):
     print(msg)
     data_obj = msg.dispatch()  # type: DataObject
 
+    print('are we here?')
     while data_obj.update_bar():
         print(data_obj.close)
         print(data_obj.low)
+    print('what?')
     # print(f'client {cid} received data object {msg.last_row}')
 
 
 # pool = futures.ThreadPoolExecutor(max_workers=10)
 # print('start requesting')
-# pool.map(request, range(2))
+# fut = pool.map(request, range(2))
+# print(fut)
 
 request(1)

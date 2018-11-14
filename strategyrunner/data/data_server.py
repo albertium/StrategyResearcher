@@ -51,20 +51,23 @@ class DataServer(AsyncAgent):
         self.tickers = set()
         self.counter = 0
 
-    async def handle_data_request(self):
-        print(f'Listening on port {self.router_port}')
+    def _run(self):
+        return [
+            [self.handle_data_request,    f'Listening on port {self.router_port}'],
+            [self.broadcast_data,         f'Broadcasting started on port {self.pub_port}']
+        ]
 
-        while True:
-            [cid, _, request] = await self.socket.recv_multipart()
-            print('alive')
-            request = pickle.loads(request)
-            print(f'{cid} request received: {request}')
-            asyncio.ensure_future(self.handle_exception(self.send_data_obj(cid, request)))
+    async def handle_data_request(self):
+        [cid, _, request] = await self.socket.recv_multipart()
+        print('alive')
+        request = pickle.loads(request)
+        print(f'{cid} request received: {request}')
+        self.start_task(self.send_data_obj(cid, request))
 
     async def send_data_obj(self, cid: bytes, request: Request):
         if isinstance(request, HistoricalDataRequest):
             data = await self.loop.run_in_executor(self.executor, self.retrieve_data_from_db,
-                                                       request.tickers, request.start_date, request.end_date)
+                                                   request.tickers, request.start_date, request.end_date)
             data_obj = Dispatcher(HistoricalDataObject, request.tickers, data=data)
         elif isinstance(request, RealTimeDataRequest):
             self.tickers |= set(request.tickers)
@@ -76,17 +79,12 @@ class DataServer(AsyncAgent):
         print('Data object sent')
 
     async def broadcast_data(self):
-        print(f'Broadcasting started on port {self.pub_port}')
-        while True:
-            self.counter += 1
-            for ticker in self.tickers:
-                await self.broadcast_socket.send_multipart([ticker.encode(), struct.pack('if', *[self.counter, self.counter])])
-            await asyncio.sleep(1)
+        self.counter += 1
+        for ticker in self.tickers:
+            await self.broadcast_socket.send_multipart([ticker.encode(), struct.pack('if', *[self.counter, self.counter])])
+        await asyncio.sleep(1)
 
     def retrieve_data_from_db(self, tickers, start_date, end_date):
         with DataManager(self.db_dir) as dm:
             data = dm.get_data(tickers, start_date, end_date)
         return data
-
-    def _run(self):
-        return [self.handle_data_request(), self.broadcast_data()]

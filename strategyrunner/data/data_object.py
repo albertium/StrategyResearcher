@@ -128,6 +128,11 @@ class RealTimeDataObject(DataObject, AsyncAgent):
         self.socket.connect(f'tcp://127.0.0.1:{port}')
         self.run_in_fork()
 
+    def _run(self):
+        return [
+            [self.collect_data, '']
+        ]
+
     def update_bar(self):
         self.data_ready.wait()
         self.data_ready.clear()
@@ -149,15 +154,11 @@ class RealTimeDataObject(DataObject, AsyncAgent):
         return False
 
     async def collect_data(self):
-        while True:
-            [ticker, msg] = await self.socket.recv_multipart()
-            ticker = ticker.decode()
-            timestamp, price = struct.unpack('if', msg)
-            print(timestamp, price)
-            self.bars[ticker].add(price)
+        [ticker, msg] = await self.socket.recv_multipart()
+        ticker = ticker.decode()
+        timestamp, price = struct.unpack('if', msg)
+        print(timestamp, price)
+        self.bars[ticker].add(price)
 
-            if timestamp % 5 == 0:
-                self.data_ready.set()
-
-    def _run(self):
-        return [self.collect_data()]
+        if timestamp % 5 == 0:
+            self.data_ready.set()
