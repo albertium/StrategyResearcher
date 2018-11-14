@@ -29,29 +29,25 @@ import json
 
 
 async def server():
-    socket = zmqa.Context().socket(zmq.PUB)
+    socket = zmqa.Context().socket(zmq.ROUTER)
     socket.bind(f'tcp://127.0.0.1:4002')
 
     while True:
-        await socket.send_multipart([b'A', b'', json.dumps({'a': 1}).encode()])
-        await socket.send_multipart([b'B', b'', json.dumps({'b': 1}).encode()])
-        await socket.send_multipart([b'C', b'', json.dumps({'c': 1}).encode()])
-        print('sent')
+        [cid, req] = await socket.recv_multipart()
+        print(req)
+        await socket.send_multipart([b'A', b'', b'message'])
         await asyncio.sleep(1)
 
 
-async def client():
-    socket = zmqa.Context().socket(zmq.SUB)
-    socket.setsockopt(zmq.SUBSCRIBE, [b'A', b'B'])
-    # socket.setsockopt(zmq.SUBSCRIBE, b'B')
+async def client(cid):
+    socket = zmqa.Context().socket(zmq.DEALER)
     socket.connect(f'tcp://127.0.0.1:4002')
 
     while True:
-        [topic, _, msg] = await socket.recv_multipart()
-        msg = json.loads(msg.decode())
-        print(msg)
+        await socket.send_json({'test': cid})
 
 
 asyncio.ensure_future(server())
-asyncio.ensure_future(client())
+asyncio.ensure_future(client(1))
+asyncio.ensure_future(client(2))
 asyncio.get_event_loop().run_forever()

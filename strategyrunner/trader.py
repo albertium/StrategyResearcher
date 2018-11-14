@@ -4,30 +4,27 @@ import zmq
 import pandas as pd
 from typing import Type
 
-from .event import EventType, SignalEvent
 from .execution import ExecutionHandler
 from .strategy import Strategy
-from .portfolio import Portfolio
 from .logging import Logger
 from .data import HistoricalDataRequest, DataObject
 
+
 class Trader:
-    def __init__(self,
-                 strategy_class:            Type[Strategy],
-                 portfolio_class:           Type[Portfolio],
-                 execution_handler_class:   Type[ExecutionHandler]):
+    def __init__(self, strategy_class: Type[Strategy], port=4002):
 
         self.data_obj = None  # type: DataObject
         self.strategy_class = strategy_class
-        self.portfolio_class = portfolio_class
-        self.execution_handler_class = execution_handler_class
 
         self.logger = Logger()
-        self.events = queue.Queue()
+        self.orders_to_submit = queue.Queue()
         self.tickers = None
         self.start_date = None
         self.end_date = None
         self.initial_capital = None
+
+        self.socket = zmq.Context().socket(zmq.DEALER)
+        self.socket.connect(f'tcp://127.0.0.1:{port}')
 
     def set_tickers(self, tickers):
         self.tickers = tickers
@@ -46,7 +43,6 @@ class Trader:
         pass
 
     def _run(self):
-        tmp = 0
         # check if necessary vales are set
         if self.initial_capital is None:
             raise ValueError("Initial capital is not set")
@@ -55,19 +51,16 @@ class Trader:
         self._initialize_trading_instance()
 
         while self.data_obj.update_bar():
-            signal = SignalEvent(1, self.tickers)
-            self.strategy.calculate_signal(signal)
-            self.portfolio.take_snapshot()
+            signal = self.strategy.calculate_signal(self.data_obj)
+            self.socket.send_json({'timestamp': self.data_obj.now, 'id': 1, 'sig': signal})
 
-        result = self.portfolio.get_history(1)
-        print(f'Sharpe Ratio: {result.get_sharpe_ratio()}')
         self.logger.close()
 
     def _initialize_trading_instance(self):
-        self.request_data_obj()
-        self.strategy = self.strategy_class(self.logger, self.events, self.data_handler)
+        self._set_data_obj()
+        self.strategy = self.strategy_class(self.logger, self.events, self.data_obj)
 
-    def request_data_obj(self):
+    def _set_data_obj(self):
         if self.tickers is None:
             raise ValueError("Tickers are not set")
         if self.start_date is None:
@@ -81,3 +74,5 @@ class Trader:
 
         socket.send_pyobj(HistoricalDataRequest(self.tickers, self.start_date, self.end_date))
         self.data_obj = socket.recv_pyobj().dispatch()
+
+

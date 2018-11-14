@@ -42,11 +42,16 @@ class DataObject(ABC):
         self.high = None
         self.low = None
         self.close = None
+        self._now = None
         self.current_close = None
 
     @abstractmethod
     def update_bar(self):
         raise NotImplementedError('update_bar is not implemented')
+
+    @property
+    def now(self):
+        return self._now
 
 
 class Dispatcher:

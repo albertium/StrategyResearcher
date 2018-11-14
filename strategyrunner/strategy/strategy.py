@@ -25,3 +25,26 @@ class Strategy(ABC):
     @abstractmethod
     def _calculate_signal(self, signal: SignalEvent):
         raise NotImplementedError("calculate_signal is not implemented")
+
+
+class HyperParameter:
+    counter = 0
+
+    def __init__(self):
+        self.order = HyperParameter.counter
+        HyperParameter.counter += 1
+
+
+class DiscreteHyperParameter(HyperParameter):
+    def __init__(self, lb, ub, step):
+        super().__init__()
+        self.lb = lb
+        self.ub = ub
+        self.step = step
+
+
+class ContinuousHyperParameter(HyperParameter):
+    def __init__(self, lb, ub):
+        super().__init__()
+        self.lb = lb
+        self.ub = ub
