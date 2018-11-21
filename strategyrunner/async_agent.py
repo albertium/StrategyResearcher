@@ -27,15 +27,20 @@ class AsyncAgent(ABC):
                 print('Caught exceptions:')
                 traceback.print_exc()
 
-    def start_task(self, coro):
-        async def wrapper():
-            try:
-                await coro
-            except Exception as e:
-                print('Caught exceptions:')
-                traceback.print_exc()
+    @staticmethod
+    async def exception_wrapper(coro):
+        try:
+            await coro
+        except Exception as e:
+            print('Caught exceptions:')
+            traceback.print_exc()
 
-        asyncio.ensure_future(wrapper())
+    def submit_task(self, coro):
+        asyncio.ensure_future(self.exception_wrapper(coro))
+
+    @staticmethod
+    def run_task(coro):
+        asyncio.new_event_loop().run_until_complete(AsyncAgent.exception_wrapper(coro))
 
     async def shutdown(self):
         print('Shutting down agent')

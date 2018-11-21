@@ -1,6 +1,11 @@
 
 from pandas.tseries.offsets import DateOffset, BDay
 import dateutil.parser as du
+import json
+import os
+import pathlib
+import numpy as np
+import string
 
 
 def rdate(period):
@@ -21,3 +26,19 @@ def parse_time(time):
     if isinstance(time, str):
         return du.parse(time)
     return time
+
+
+def load_config(file):
+    if file is None or not pathlib.Path(file).is_file():
+        file = f'{os.getcwd()}/strategyrunner/config/default.config'
+    with open(file, 'r') as f:
+        config = json.load(f)
+    return config
+
+
+alphabets = list(string.digits + string.ascii_uppercase)
+
+
+def get_name_hash():
+    return ''.join(np.random.choice(alphabets, 8))
+

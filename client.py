@@ -2,6 +2,7 @@
 import zmq
 from concurrent import futures
 from strategyrunner.data import HistoricalDataRequest, RealTimeDataRequest, DataObject
+import traceback
 
 
 def request(cid):
@@ -25,9 +26,15 @@ def request(cid):
     # print(f'client {cid} received data object {msg.last_row}')
 
 
-# pool = futures.ThreadPoolExecutor(max_workers=10)
-# print('start requesting')
-# fut = pool.map(request, range(2))
-# print(fut)
+pool = futures.ThreadPoolExecutor(max_workers=10)
+print('start requesting')
+futs = [pool.submit(request, cid) for cid in range(1)]
 
-request(1)
+for fut in futures.as_completed(futs):
+    try:
+        print(fut.result())
+    except Exception as e:
+        print('Exception:')
+        traceback.print_exc()
+
+# request(1)

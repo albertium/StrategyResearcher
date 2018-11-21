@@ -3,12 +3,16 @@ import zmq
 import zmq.asyncio as zmqa
 import asyncio
 from concurrent import futures
+import json
 import pickle
 import os
 import struct
 
-from strategyrunner.async_agent import AsyncAgent
-from strategyrunner.data import DataManager, HistoricalDataObject, RealTimeDataObject, Dispatcher
+from ..async_agent import AsyncAgent
+from ..data import DataManager, HistoricalDataObject, RealTimeDataObject, Dispatcher
+from .. import utils
+from .. import message
+from .. import const
 
 
 class Request:
@@ -35,15 +39,16 @@ class RealTimeDataRequest(Request):
 
 
 class DataServer(AsyncAgent):
-    def __init__(self):
+    def __init__(self, config_file=None):
         super().__init__()
 
-        self.router_port = 4000
-        self.pub_port = 4001
-        self.db_dir = f'{os.getcwd()}/test.db'
+        config = utils.load_config(config_file)
+        self.request_port = config['data_server_request_port']
+        self.pub_port = config['data_server_broadcast_port']
+        self.db_dir = f'{os.getcwd()}/data/test.db'
 
         self.socket = zmqa.Context().socket(zmq.ROUTER)
-        self.socket.bind(f'tcp://127.0.0.1:{self.router_port}')
+        self.socket.bind(f'tcp://127.0.0.1:{self.request_port}')
         self.broadcast_socket = zmqa.Context().socket(zmq.PUB)
         self.broadcast_socket.bind(f'tcp://127.0.0.1:{self.pub_port}')
 
@@ -53,26 +58,26 @@ class DataServer(AsyncAgent):
 
     def _run(self):
         return [
-            [self.handle_data_request,    f'Listening on port {self.router_port}'],
+            [self.handle_data_request,    f'Listening on port {self.request_port}'],
             [self.broadcast_data,         f'Broadcasting started on port {self.pub_port}']
         ]
 
     async def handle_data_request(self):
-        [cid, _, request] = await self.socket.recv_multipart()
-        print('alive')
-        request = pickle.loads(request)
-        print(f'{cid} request received: {request}')
-        self.start_task(self.send_data_obj(cid, request))
+        pid, _, request = await self.socket.recv_multipart()
+        request = json.loads(request.decode())
+        print(f'Request received from {pid}: {request}')
+        self.submit_task(self.send_data_obj(pid, request))
 
-    async def send_data_obj(self, cid: bytes, request: Request):
-        if isinstance(request, HistoricalDataRequest):
-            data = await self.loop.run_in_executor(self.executor, self.retrieve_data_from_db,
-                                                   request.tickers, request.start_date, request.end_date)
-            data_obj = Dispatcher(HistoricalDataObject, request.tickers, data=data)
-        elif isinstance(request, RealTimeDataRequest):
-            self.tickers |= set(request.tickers)
+    async def send_data_obj(self, cid: bytes, request):
+        source, tickers, start_time, end_time = message.parse_data_request(request)
+        if source == const.Broker.SIMULATED:  # historical data
+            print(f'Loading historical data for {tickers} from {start_time} to {end_time}')
+            data = await self.loop.run_in_executor(self.executor, self.retrieve_data_from_db, tickers, start_time, end_time)
+            data_obj = Dispatcher(HistoricalDataObject, request['tickers'], data=data)
+        elif source == const.Broker.INTERACTIVE_BROKERS:  # IB real time data
+            self.tickers |= set(tickers)
             print('Enlisted tickers: ', self.tickers)
-            data_obj = Dispatcher(RealTimeDataObject, request.tickers)
+            data_obj = Dispatcher(RealTimeDataObject, tickers)
         else:
             raise ValueError('Unrecognized request')
         await self.socket.send_multipart([cid, b'', pickle.dumps(data_obj)])

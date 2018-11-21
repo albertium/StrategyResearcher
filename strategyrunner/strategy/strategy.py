@@ -1,30 +1,26 @@
 
 from abc import ABC, abstractmethod
-from ..data import DataHandler
-from ..event import SignalEvent
+from ..data import DataObject
 from ..logging import Logger
-from queue import Queue
+from ..helpers import Signal
 
 
 class Strategy(ABC):
-    def __init__(self, logger: Logger, events: Queue, data: DataHandler):
+    name = "Base"
+
+    def __init__(self, logger: Logger, data: DataObject):
         self.logger = logger
         self.data = data
-        self.events = events
         self.look_back = -1
-        self._setup()  # for user initializationt
+        self._setup()  # for user initialization
 
-    def calculate_signal(self, signal: SignalEvent):
-        if self.look_back < 0 or len(self.data.close) >= self.look_back:
-            self.events.put(self._calculate_signal(signal))
+    @abstractmethod
+    def set_signal(self, signal: Signal) -> None:
+        raise NotImplementedError('set_signal is not implemented')
 
     @abstractmethod
     def _setup(self):
         pass
-
-    @abstractmethod
-    def _calculate_signal(self, signal: SignalEvent):
-        raise NotImplementedError("calculate_signal is not implemented")
 
 
 class HyperParameter:

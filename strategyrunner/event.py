@@ -7,6 +7,7 @@ class EventType(Enum):
     SIGNAL = 2
     ORDER = 3
     FILL = 4
+    QUOTE = 5
 
 
 class Direction(Enum):
@@ -48,12 +49,12 @@ class SignalEvent(Event):
 
 
 class OrderEvent(Event):
-    def __init__(self, strategy_id, ticker, order_type, quantity):
+    def __init__(self, sid, ticker, order_type, quantity):
         if quantity == 0:
             raise ValueError("Quantity is 0")
 
         super().__init__(EventType.ORDER)
-        self.strategy_id = strategy_id
+        self.sid = sid
         self.ticker = ticker
         self.order_type = order_type
         self.direction = Direction.BUY if quantity > 0 else Direction.SELL  # this is only used in print out
@@ -67,10 +68,10 @@ class OrderEvent(Event):
 
 
 class FillEvent(Event):
-    def __init__(self, timestamp, strategy_id, ticker, exchange, quantity, price, commission=0):
+    def __init__(self, timestamp, sid, ticker, exchange, quantity, price, commission=0):
         super().__init__(EventType.FILL)
         self.timestamp = timestamp
-        self.strategy_id = strategy_id
+        self.sid = sid
         self.ticker = ticker
         self.exchange = exchange
         self.quantity = quantity
@@ -78,7 +79,15 @@ class FillEvent(Event):
         self.commission = commission
 
     def __str__(self):
-        return f"Filled {self.quantity} {self.ticker} for strategy {self.strategy_id} at {self.timestamp}"
+        return f'Filled {self.quantity} {self.ticker} for strategy {self.sid} at {self.timestamp}'
 
     def __repr__(self):
         return self.__str__()
+
+
+class QuoteEvent(Event):
+    def __init__(self, timestamp, sid, quotes: dict):
+        super(QuoteEvent, self).__init__(EventType.QUOTE)
+        self.timestamp = timestamp
+        self.sid = sid
+        self.quotes = quotes

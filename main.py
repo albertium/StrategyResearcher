@@ -22,32 +22,16 @@
 #
 # print(data.head())
 
-import zmq
-import zmq.asyncio as zmqa
-import asyncio
-import json
+from strategyrunner import Trader
+from strategyrunner.strategy import MomentumStrategy
+from strategyrunner.const import Broker
 
 
-async def server():
-    socket = zmqa.Context().socket(zmq.ROUTER)
-    socket.bind(f'tcp://127.0.0.1:4002')
-
-    while True:
-        [cid, req] = await socket.recv_multipart()
-        print(req)
-        await socket.send_multipart([b'A', b'', b'message'])
-        await asyncio.sleep(1)
+trader = Trader(MomentumStrategy)
+trader.set_capital(10000)
+trader.set_broker(Broker.SIMULATED)
+trader.set_tickers(['AAPL'])
+trader.set_time('2015-01-01', '2017-12-31')
+trader.trade()
 
 
-async def client(cid):
-    socket = zmqa.Context().socket(zmq.DEALER)
-    socket.connect(f'tcp://127.0.0.1:4002')
-
-    while True:
-        await socket.send_json({'test': cid})
-
-
-asyncio.ensure_future(server())
-asyncio.ensure_future(client(1))
-asyncio.ensure_future(client(2))
-asyncio.get_event_loop().run_forever()

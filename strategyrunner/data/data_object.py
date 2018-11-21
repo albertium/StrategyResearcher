@@ -7,8 +7,10 @@ import pandas as pd
 import numpy as np
 from typing import Type
 import struct
+import asyncio
 
 from strategyrunner.async_agent import AsyncAgent
+from strategyrunner.event import QuoteEvent
 
 
 class Bar:
@@ -44,10 +46,28 @@ class DataObject(ABC):
         self.close = None
         self._now = None
         self.current_close = None
+        self.queue = None
 
     @abstractmethod
     def update_bar(self):
         raise NotImplementedError('update_bar is not implemented')
+
+    @abstractmethod
+    def get_close(self, ticker):
+        raise NotImplementedError('get_close is not implemented')
+
+    def set_event_queue(self, account_event_queue: asyncio.Queue):
+        self.queue = account_event_queue
+
+    def set_time(self, timestamp):
+        """
+        for portfolio manager
+        """
+        pass
+
+    @abstractmethod
+    def set_look_back(self, period=0):
+        raise NotImplementedError('set_loopback is not implemented')
 
     @property
     def now(self):
@@ -79,6 +99,7 @@ class HistoricalDataObject(DataObject):
 
         self.__data = data
         self.index_row = 0
+        self.prev_row = 0
         self.last_row = self.__data.shape[0]
 
         # since loc in this case returns copy, we do indexing once and for all to avoid overhead
@@ -94,15 +115,38 @@ class HistoricalDataObject(DataObject):
         if self.index_row >= self.last_row:
             return False
 
-        # populate new data
-        self._now = self.__timestamps[self.index_row]  # n - 1
         self.index_row += 1
+        self._update_bar()
+        return True
+
+    def set_time(self, timestamp):
+        while self.index_row < self.last_row and timestamp <= self.__timestamps[self.index_row]:
+            self.index_row += 1
+        self._update_bar()
+
+    def set_look_back(self, period=0):
+        if self.index_row < period:
+            self.index_row = period  # set start point to lookback period
+
+    def get_close(self, ticker):
+        return self.current_close[ticker]
+
+    def _update_bar(self):
+        self._now = self.__timestamps[self.index_row - 1]
         self.open = self.__open[:self.index_row]
         self.high = self.__high[:self.index_row]
         self.low = self.__low[:self.index_row]
         self.close = self.__close[:self.index_row]
         self.current_close = {ticker: price for ticker, price in zip(self.tickers, self.close[-1])}
-        return True
+
+        if self.queue is not None:
+            AsyncAgent.run_task(self.send_quotes())
+        self.prev_row = self.index_row
+
+    async def send_quotes(self):
+        for idx in range(self.prev_row, self.index_row):
+            await self.queue.put(QuoteEvent(self.__timestamps[idx],
+                                            {ticker: price for ticker, price in zip(self.tickers, self.close[idx])}))
 
 
 class RealTimeDataObject(DataObject, AsyncAgent):
@@ -153,6 +197,9 @@ class RealTimeDataObject(DataObject, AsyncAgent):
             return True
         return False
 
+    def get_close(self, ticker):
+        pass
+
     async def collect_data(self):
         [ticker, msg] = await self.socket.recv_multipart()
         ticker = ticker.decode()
@@ -162,3 +209,6 @@ class RealTimeDataObject(DataObject, AsyncAgent):
 
         if timestamp % 5 == 0:
             self.data_ready.set()
+            if self.queue is not None:
+                await self.queue.put(QuoteEvent(timestamp,
+                                                {ticker: self.bars[ticker].close for ticker in self.tickers}))
