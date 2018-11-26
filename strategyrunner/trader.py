@@ -7,6 +7,7 @@ from typing import Type
 from .strategy import Strategy
 from .logging import Logger
 from .data import DataObject, HistoricalDataObject
+from .event import AccountOpenEvent, AccountCloseEvent, SignalEvent
 from . import message
 from . import const
 from . import utils
@@ -63,34 +64,33 @@ class Trader:
         self._set_data_obj()
         self.strategy = self.strategy_class(self.logger, self.data_obj)
         self.data_obj.set_look_back(self.strategy.look_back)
+        print(f'data object now is {self.data_obj.now}')
 
         signal = Signal(self.data_obj.tickers)
         while self.data_obj.update_bar():
             signal.reset()  # set all alphas to 0
             self.strategy.set_signal(signal)
-            self.order_socket.send_json(message.gen_order_msg(self.data_obj.now, self.strategy_name, signal))
+            self.order_socket.send_pyobj(SignalEvent(self.data_obj.now, self.strategy_name, signal))
 
         # self.logger.close()
 
-        self.socket.send_json(message.gen_acct_finish_msg('2017-12-31', self.strategy_name))
+        if self.end_time is None:
+            self.socket.send_pyobj(AccountCloseEvent(pd.Timestamp.now(), self.strategy_name))
+        else:
+            self.socket.send_pyobj(AccountCloseEvent(self.end_time, self.strategy_name))
 
     def _set_data_obj(self):
         if self.tickers is None:
             raise ValueError("Tickers are not set")
 
-        if self.broker == const.Broker.SIMULATED:
-            if self.start_time is None:
-                raise ValueError("Start time is not set")
-            if self.end_time is None:
-                raise ValueError("End time is not set")
-            request = message.gen_data_request(self.broker.value, self.tickers, self.start_time, self.end_time)
-        else:
-            request = message.gen_data_request(self.broker.value, self.tickers)
+        event = AccountOpenEvent(self.start_time, self.strategy_name, 10000, self.broker, self.tickers,
+                                 self.start_time, self.end_time)
 
-        self.socket.send_json(message.gen_acct_create_msg(self.start_time, self.strategy_name, 10000, request))
-        self.data_obj = self.socket.recv_pyobj().dispatch()
+        print(f'Requesting data: {event.data_request}')
+        self.socket.send_pyobj(event)
+        self.data_obj = self.socket.recv_pyobj().dispatch()  # type: DataObject
 
-        if isinstance(self.data_obj, HistoricalDataObject):
+        if self.data_obj.type == const.Data.SIMULATED:
             print(f'Historical data object received with {self.data_obj.last_row} data points')
         else:
             print('Data object received')

@@ -28,7 +28,7 @@ def parse_time(time):
     return time
 
 
-def load_config(file):
+def load_config(file=None):
     if file is None or not pathlib.Path(file).is_file():
         file = f'{os.getcwd()}/strategyrunner/config/default.config'
     with open(file, 'r') as f:

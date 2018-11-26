@@ -3,13 +3,13 @@ import zmq
 import zmq.asyncio as zmqa
 import asyncio
 from concurrent import futures
-import json
 import pickle
 import os
 import struct
 
 from ..async_agent import AsyncAgent
 from ..data import DataManager, HistoricalDataObject, RealTimeDataObject, Dispatcher
+from ..event import DataRequestEvent
 from .. import utils
 from .. import message
 from .. import const
@@ -64,20 +64,22 @@ class DataServer(AsyncAgent):
 
     async def handle_data_request(self):
         pid, _, request = await self.socket.recv_multipart()
-        request = json.loads(request.decode())
-        print(f'Request received from {pid}: {request}')
-        self.submit_task(self.send_data_obj(pid, request))
+        event = pickle.loads(request)
+        print(f'Request received from {pid}: {event}')
+        self.submit_task(self.send_data_obj(pid, event))
 
-    async def send_data_obj(self, cid: bytes, request):
-        source, tickers, start_time, end_time = message.parse_data_request(request)
-        if source == const.Broker.SIMULATED:  # historical data
-            print(f'Loading historical data for {tickers} from {start_time} to {end_time}')
-            data = await self.loop.run_in_executor(self.executor, self.retrieve_data_from_db, tickers, start_time, end_time)
-            data_obj = Dispatcher(HistoricalDataObject, request['tickers'], data=data)
-        elif source == const.Broker.INTERACTIVE_BROKERS:  # IB real time data
-            self.tickers |= set(tickers)
+    async def send_data_obj(self, cid: bytes, event: DataRequestEvent):
+        if event.broker == const.Broker.SIMULATED:  # historical data
+            print(f'Loading historical data for {event.tickers} from {event.start_time} to {event.end_time}')
+            data = await self.loop.run_in_executor(self.executor, self.retrieve_data_from_db,
+                                                   event.tickers, event.start_time, event.end_time)
+            data_obj = Dispatcher(HistoricalDataObject, event.tickers, data=data)
+
+        elif event.broker == const.Broker.INTERACTIVE_BROKERS:  # IB real time data
+            self.tickers |= set(event.tickers)
             print('Enlisted tickers: ', self.tickers)
-            data_obj = Dispatcher(RealTimeDataObject, tickers)
+            data_obj = Dispatcher(RealTimeDataObject, event.tickers)
+
         else:
             raise ValueError('Unrecognized request')
         await self.socket.send_multipart([cid, b'', pickle.dumps(data_obj)])

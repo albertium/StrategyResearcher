@@ -9,8 +9,10 @@ from typing import Type
 import struct
 import asyncio
 
-from strategyrunner.async_agent import AsyncAgent
-from strategyrunner.event import QuoteEvent
+from ..async_agent import AsyncAgent
+from ..event import QuoteEvent
+from .. import const
+from .. import utils
 
 
 class Bar:
@@ -37,15 +39,21 @@ class Bar:
 
 
 class DataObject(ABC):
-    def __init__(self, tickers, data=None, *args):
+    def __init__(self, data_type: const.Data, broker: const.Broker, tickers, *args):
         super().__init__(*args)  # for multiple inheritance
         self.tickers = tickers
+
+        self.type = data_type  # type: const.Data
+        self.broker = broker  # type: const.Broker
+
         self.open = None
         self.high = None
         self.low = None
         self.close = None
-        self._now = None
         self.current_close = None
+
+        self._now = None
+        self.sid = ''
         self.queue = None
 
     @abstractmethod
@@ -56,7 +64,8 @@ class DataObject(ABC):
     def get_close(self, ticker):
         raise NotImplementedError('get_close is not implemented')
 
-    def set_event_queue(self, account_event_queue: asyncio.Queue):
+    def set_event_queue(self, sid, account_event_queue: asyncio.Queue):
+        self.sid = sid
         self.queue = account_event_queue
 
     def set_time(self, timestamp):
@@ -95,7 +104,7 @@ class Dispatcher:
 
 class HistoricalDataObject(DataObject):
     def __init__(self, tickers, data: pd.DataFrame):
-        super(HistoricalDataObject, self).__init__(tickers)
+        super(HistoricalDataObject, self).__init__(const.Data.SIMULATED, const.Broker.SIMULATED, tickers)
 
         self.__data = data
         self.index_row = 0
@@ -119,17 +128,27 @@ class HistoricalDataObject(DataObject):
         self._update_bar()
         return True
 
-    def set_time(self, timestamp):
-        while self.index_row < self.last_row and timestamp <= self.__timestamps[self.index_row]:
+    async def set_time(self, timestamp):
+        while self.index_row < self.last_row and timestamp >= self.__timestamps[self.index_row]:
             self.index_row += 1
-        self._update_bar()
+        await self._update_and_quote()
 
     def set_look_back(self, period=0):
         if self.index_row < period:
             self.index_row = period  # set start point to lookback period
+        self._update()
 
     def get_close(self, ticker):
         return self.current_close[ticker]
+
+    def _update(self):
+        self._update_bar()
+        self.prev_row = self.index_row
+
+    async def _update_and_quote(self):
+        self._update_bar()
+        await self.send_quotes()
+        self.prev_row = self.index_row
 
     def _update_bar(self):
         self._now = self.__timestamps[self.index_row - 1]
@@ -139,25 +158,21 @@ class HistoricalDataObject(DataObject):
         self.close = self.__close[:self.index_row]
         self.current_close = {ticker: price for ticker, price in zip(self.tickers, self.close[-1])}
 
-        if self.queue is not None:
-            AsyncAgent.run_task(self.send_quotes())
-        self.prev_row = self.index_row
-
     async def send_quotes(self):
         for idx in range(self.prev_row, self.index_row):
-            await self.queue.put(QuoteEvent(self.__timestamps[idx],
+            await self.queue.put(QuoteEvent(self.__timestamps[idx], self.sid,
                                             {ticker: price for ticker, price in zip(self.tickers, self.close[idx])}))
 
 
 class RealTimeDataObject(DataObject, AsyncAgent):
-    def __init__(self, tickers, cache=5, port=4001):
-        super().__init__(tickers)
+    def __init__(self, tickers, data=None):
+        super(RealTimeDataObject, self).__init__(tickers)
 
         self.bars = {ticker: Bar() for ticker in tickers}
-        self.cache = cache
         self.data_ready = threading.Event()
         self.agent_close = threading.Event()
         self.events = [self.data_ready, self.agent_close]
+        self.look_back = None
 
         self.__open = []
         self.__high = []
@@ -165,17 +180,21 @@ class RealTimeDataObject(DataObject, AsyncAgent):
         self.__close = []
         self.__prices = [self.__open, self.__high, self.__low, self.__close]
 
+        config = utils.load_config()
         self.socket = zmqa.Context().socket(zmq.SUB)
         # sub needs to subscribe to topic
         for ticker in tickers:
             self.socket.setsockopt(zmq.SUBSCRIBE, ticker.encode())
-        self.socket.connect(f'tcp://127.0.0.1:{port}')
+        self.socket.connect(f'tcp://127.0.0.1:{config["data_server_broadcast_port"]}')
         self.run_in_fork()
 
     def _run(self):
         return [
             [self.collect_data, '']
         ]
+
+    def set_look_back(self, period=0):
+        self.look_back = period
 
     def update_bar(self):
         self.data_ready.wait()
@@ -186,7 +205,7 @@ class RealTimeDataObject(DataObject, AsyncAgent):
             ohlc = [self.bars[ticker].get() for ticker in self.tickers]
             ohlc = list(map(list, zip(*ohlc)))  # transpose
             for datum, price in zip(self.__prices, ohlc):
-                if len(datum) >= self.cache:
+                if len(datum) >= self.look_back:
                     datum.pop(0)
                 datum.append(price)
 

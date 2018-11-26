@@ -31,7 +31,7 @@ trader = Trader(MomentumStrategy)
 trader.set_capital(10000)
 trader.set_broker(Broker.SIMULATED)
 trader.set_tickers(['AAPL'])
-trader.set_time('2015-01-01', '2017-12-31')
+trader.set_time('2015-01-01', '2015-07-01')
 trader.trade()
 
 
