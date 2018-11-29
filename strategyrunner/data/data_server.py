@@ -55,17 +55,15 @@ class DataServer(AsyncAgent):
         self.tickers = set()
         self.counter = 0
 
-    def _run(self):
-        return [
-            [self.handle_data_request,    f'Listening on port {self.request_port}'],
-            [self.broadcast_data,         f'Broadcasting started on port {self.pub_port}']
-        ]
+        self.run_coroutine(f'Listening on port {self.request_port}', self.handle_data_request)
+        self.run_coroutine(f'Broadcasting started on port {self.pub_port}', self.broadcast_data)
 
     async def handle_data_request(self):
         pid, _, request = await self.socket.recv_multipart()
         event = pickle.loads(request)
         print(f'Request received from {pid}: {event}')
-        self.submit_task(self.send_data_obj(pid, event))
+        self.run_coroutine('', self.send_data_obj, pid, event)
+        return True
 
     async def send_data_obj(self, cid: bytes, event: DataRequestEvent):
         if event.broker == const.Broker.SIMULATED:  # historical data
@@ -89,6 +87,7 @@ class DataServer(AsyncAgent):
         for ticker in self.tickers:
             await self.broadcast_socket.send_multipart([ticker.encode(), struct.pack('if', *[self.counter, self.counter])])
         await asyncio.sleep(1)
+        return True
 
     def retrieve_data_from_db(self, tickers, start_date, end_date):
         with DataManager(self.db_dir) as dm:

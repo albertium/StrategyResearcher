@@ -84,9 +84,6 @@ class PortfolioManager(AsyncAgent):
         self.run_coroutine('', self.handle_events)
         self.run_coroutine('', self.execute_simulated_order)
 
-    def _run(self):
-        return []
-
     async def handle_request(self):
         [pid, event] = await self.socket.recv_multipart()
         event = pickle.loads(event)  # type: Union[AccountOpenEvent, AccountCloseEvent]

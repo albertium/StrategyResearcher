@@ -12,7 +12,6 @@
 # bt.set_dates("1988-08-01", "2012-12-31")
 # bt.set_capital(10000)
 # start = time.clock()
-# bt._run()
 # print("total: ", time.clock() - start, "s\n")
 
 

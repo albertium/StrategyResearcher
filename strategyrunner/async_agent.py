@@ -12,10 +12,6 @@ class AsyncAgent(ABC):
         self.futures = None
         self.events = []
 
-    @abstractmethod
-    def _run(self):
-        raise NotImplementedError
-
     @staticmethod
     async def coroutine_wrapper(coro, *args):
         alive = True
@@ -31,31 +27,10 @@ class AsyncAgent(ABC):
             print(msg)
         asyncio.ensure_future(self.coroutine_wrapper(coro, *args))
 
-    async def await_coroutine(self, coro, msg=''):
+    def run_coroutine_threadsafe(self, msg, coro, *args):
         if msg:
             print(msg)
-
-        while True:
-            try:
-                await coro()
-            except Exception as e:
-                print('Caught exceptions:')
-                traceback.print_exc()
-
-    @staticmethod
-    async def exception_wrapper(coro):
-        try:
-            await coro
-        except Exception as e:
-            print('Caught exceptions:')
-            traceback.print_exc()
-
-    def submit_task(self, coro):
-        asyncio.ensure_future(self.exception_wrapper(coro))
-
-    @staticmethod
-    def run_task(coro):
-        asyncio.new_event_loop().run_until_complete(AsyncAgent.exception_wrapper(coro))
+        asyncio.run_coroutine_threadsafe(self.coroutine_wrapper(coro, *args), self.loop)
 
     async def shutdown(self):
         print('Shutting down agent')
@@ -77,7 +52,6 @@ class AsyncAgent(ABC):
             self.loop.add_signal_handler(sig, lambda s=sig: asyncio.ensure_future(self.shutdown()))
 
         try:
-            self.futures = [asyncio.ensure_future(self.await_coroutine(coro, msg)) for coro, msg in self._run()]
             self.loop.run_forever()
         finally:
             print(f'Agent shut down')
@@ -90,6 +64,4 @@ class AsyncAgent(ABC):
         for sig in signals:
             self.loop.add_signal_handler(sig, lambda s=sig: asyncio.run_coroutine_threadsafe(self.shutdown(), self.loop))
 
-        self.futures = [asyncio.run_coroutine_threadsafe(self.await_coroutine(coro, msg), self.loop)
-                        for coro, msg in self._run()]
         threading.Thread(target=self.loop.run_forever).start()
