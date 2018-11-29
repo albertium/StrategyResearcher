@@ -30,7 +30,7 @@ from strategyrunner.const import Broker
 trader = Trader(MomentumStrategy)
 trader.set_capital(10000)
 trader.set_broker(Broker.SIMULATED)
-trader.set_tickers(['AAPL'])
+trader.set_tickers(['AAPL', 'GOOG', 'FB', 'AMZN', 'TSLA', 'GS', 'JPM'])
 trader.set_time('2015-01-01', '2018-11-01')
 trader.trade()
 

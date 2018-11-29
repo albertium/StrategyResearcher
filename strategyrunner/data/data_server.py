@@ -11,7 +11,6 @@ from ..async_agent import AsyncAgent
 from ..data import DataManager, HistoricalDataObject, RealTimeDataObject, Dispatcher
 from ..event import DataRequestEvent
 from .. import utils
-from .. import message
 from .. import const
 
 

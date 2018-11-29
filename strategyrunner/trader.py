@@ -58,7 +58,7 @@ class Trader:
         if self.broker is None:
             raise ValueError("Broker is not set")
 
-        wall_time_start = time.clock()
+        wall_time_start = time.time()
 
         self._set_data_obj()
         self.strategy = self.strategy_class(self.logger, self.data_obj)
@@ -70,7 +70,7 @@ class Trader:
             self.strategy.set_signal(signal)
             self.socket.send_pyobj(SignalEvent(self.data_obj.now, self.strategy_name, signal))
 
-        wall_time_end = time.clock()
+        wall_time_end = time.time()
         print(f'Wall time: {wall_time_end - wall_time_start}s')
 
         # self.logger.close()
@@ -82,7 +82,7 @@ class Trader:
 
         result = self.socket.recv_pyobj()  # type: TradeRecord
         print(f'Final capital: {result.get_equity()}')
-        print(f'Book keeping time: {time.clock() - wall_time_end}s')
+        print(f'Book keeping time: {time.time() - wall_time_end}s')
 
     def _set_data_obj(self):
         if self.tickers is None:
