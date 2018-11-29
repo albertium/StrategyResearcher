@@ -128,22 +128,18 @@ class HistoricalDataObject(DataObject):
         self._update_bar()
         return True
 
+    def set_look_back(self, period=0):
+        if self.index_row < period:
+            self.index_row = period  # set start point to lookback period
+        self._update_bar()
+
     async def set_time(self, timestamp):
         while self.index_row < self.last_row and timestamp >= self.__timestamps[self.index_row]:
             self.index_row += 1
         await self._update_and_quote()
 
-    def set_look_back(self, period=0):
-        if self.index_row < period:
-            self.index_row = period  # set start point to lookback period
-        self._update()
-
     def get_close(self, ticker):
         return self.current_close[ticker]
-
-    def _update(self):
-        self._update_bar()
-        self.prev_row = self.index_row
 
     async def _update_and_quote(self):
         self._update_bar()

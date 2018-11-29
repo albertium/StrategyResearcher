@@ -2,6 +2,8 @@
 import pandas as pd
 import numpy as np
 
+from ..event import FillEvent
+
 
 class Datum:
     def __init__(self, quantity, price):
@@ -53,6 +55,10 @@ class TradeRecord:
         self.positions[ticker] += quantity
         self.cash -= delta
         self.commissions[ticker] += commission
+
+    def update_from_fill(self, fill: FillEvent):
+        for ticker, (qty, price, comm) in fill.fills.items():
+            self.update(ticker, qty, price, comm)
 
     def get_equity(self):
         return self.snapshots[-1]["equity"]

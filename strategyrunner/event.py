@@ -11,32 +11,42 @@ class Direction(Enum):
 
 class Event:
     def __init__(self, event_type):
-        self.type = event_type
+        self.type = event_type  # type: const.Event
 
-    # def __repr__(self):
-    #     return self.__str__()
+    def __repr__(self):
+        return self.__str__()
 
 
-class AccountOpenEvent(Event):
-    def __init__(self, timestamp, sid, capital, broker, tickers, start_time=None, end_time=None):
-        super(AccountOpenEvent, self).__init__(const.Event.ACCT_OPEN)
+class BaseEvent(Event):
+    def __init__(self, event_type, timestamp, sid):
+        super(BaseEvent, self).__init__(event_type)
         self.timestamp = timestamp
         self.sid = sid
+
+    def __str__(self):
+        return f'[{self.timestamp}]|{self.sid}|{self.type.name}:'
+
+
+class AccountOpenEvent(BaseEvent):
+    def __init__(self, timestamp, sid, capital, broker, tickers, start_time=None, end_time=None, pid=None):
+        super(AccountOpenEvent, self).__init__(const.Event.ACCT_OPEN, timestamp, sid)
         self.capital = capital
         self.data_request = DataRequestEvent(broker, tickers, start_time, end_time)
+        self.pid = pid
 
     def __str__(self):
-        return f'Account Open at {self.timestamp} for {self.sid} with capital {self.capital} and {self.data_request}'
+        text = super(AccountOpenEvent, self).__str__()
+        return f'{text} capital -> {self.capital} / data -> {self.data_request.tickers}'
 
 
-class AccountCloseEvent(Event):
-    def __init__(self, timestamp, sid):
-        super(AccountCloseEvent, self).__init__(const.Event.ACCT_CLOSE)
-        self.timestamp = timestamp
-        self.sid = sid
+class AccountCloseEvent(BaseEvent):
+    def __init__(self, timestamp, sid, pid=None):
+        super(AccountCloseEvent, self).__init__(const.Event.ACCT_CLOSE, timestamp, sid)
+        self.pid = pid
 
     def __str__(self):
-        return f'Account Close at {self.timestamp} for {self.sid}'
+        text = super(AccountCloseEvent, self).__str__()
+        return f'{text} done'
 
 
 class DataRequestEvent(Event):
@@ -57,57 +67,56 @@ class DataRequestEvent(Event):
         return prefix
 
 
-class SignalEvent(Event):
+class SignalEvent(BaseEvent):
     def __init__(self, timestamp, sid, signal: Signal):
-        super(SignalEvent, self).__init__(const.Event.SIGNAL)
-        self.timestamp = timestamp
-        self.sid = sid
+        super(SignalEvent, self).__init__(const.Event.SIGNAL, timestamp, sid)
         self.signal = signal
 
     def __str__(self):
-        text = "Signal event: "
-        for k, v in self.signal.signal.items():
-            text += f"{k}-> {v}\n"
+        text = super(SignalEvent, self).__str__() + '\n'
+        text += '\n'.join([f'   {ticker} $ {sig}' for ticker, sig in self.signal.signal.items()]) + '\n'
         return text
 
 
-class OrderEvent(Event):
-    def __init__(self, sid, ticker, order_type, quantity):
+class OrderEvent(BaseEvent):
+    def __init__(self, timestamp, sid):
+        super(OrderEvent, self).__init__(const.Event.ORDER, timestamp, sid)
+        self.orders = {}
+
+    def add(self, ticker, order_type, quantity):
         if quantity == 0:
-            raise ValueError("Quantity is 0")
+            raise ValueError('Quantity shouldn''t be 0')
+        self.orders[ticker] = [order_type, quantity]
 
-        super().__init__(const.Event.ORDER)
-        self.sid = sid
-        self.ticker = ticker
-        self.order_type = order_type
-        self.direction = Direction.BUY if quantity > 0 else Direction.SELL  # this is only used in print out
-        self.quantity = quantity
+    def added(self):
+        return len(self.orders) > 0
 
     def __str__(self):
-        return f"{self.direction.name} {abs(self.quantity): d} {self.ticker}"
+        text = super(OrderEvent, self).__str__() + '\n'
+        text += '\n'.join([f'   {ticker} -> {qty: d}' for ticker, (_, qty) in self.orders.items()]) + '\n'
+        return text
 
 
-class FillEvent(Event):
-    def __init__(self, timestamp, sid, ticker, exchange, quantity, price, commission=0):
-        super().__init__(const.Event.FILL)
-        self.timestamp = timestamp
-        self.sid = sid
-        self.ticker = ticker
-        self.exchange = exchange
-        self.quantity = quantity
-        self.price = price
-        self.commission = commission
+class FillEvent(BaseEvent):
+    def __init__(self, timestamp, sid):
+        super(FillEvent, self).__init__(const.Event.FILL, timestamp, sid)
+        self.fills = {}
+
+    def add(self, ticker, price, quantity, commission=0):
+        self.fills[ticker] = [quantity, price, commission]
 
     def __str__(self):
-        return f'Filled {self.quantity} {self.ticker} for strategy {self.sid} at {self.timestamp}'
+        text = super(FillEvent, self).__str__() + '\n'
+        text += '\n'.join([f'   {ticker} {qty: d} @ {price}' for ticker, (qty, price, com) in self.fills.items()]) + '\n'
+        return text
 
 
-class QuoteEvent(Event):
+class QuoteEvent(BaseEvent):
     def __init__(self, timestamp, sid, quotes: dict):
-        super(QuoteEvent, self).__init__(const.Event.QUOTE)
-        self.timestamp = timestamp
-        self.sid = sid
+        super(QuoteEvent, self).__init__(const.Event.QUOTE, timestamp, sid)
         self.quotes = quotes
 
     def __str__(self):
-        return f'Quotes at {self.timestamp} for {self.sid}: {self.quotes}'
+        text = super(QuoteEvent, self).__str__() + '\n'
+        text += '\n'.join([f'   {ticker} @ {price}' for ticker, price in self.quotes.items()]) + '\n'
+        return text

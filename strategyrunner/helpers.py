@@ -1,4 +1,6 @@
 
+import asyncio
+
 
 class Signal:
     def __init__(self, tickers):
@@ -30,3 +32,23 @@ class Signal:
 
     def __repr__(self):
         return self.__str__()
+
+
+class Counter:
+    def __init__(self):
+        self._count = 0
+        self._ready = asyncio.Event()
+        self._ready.clear()
+
+    def inc(self, count=1):
+        self._count += count
+        if self._count > 0:
+            self._ready.set()
+
+    def dec(self, count=1):
+        self._count -= count
+        if self._count <= 0:
+            self._ready.clear()
+
+    async def wait(self):
+        await self._ready.wait()

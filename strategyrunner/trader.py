@@ -3,12 +3,13 @@ import queue
 import zmq
 import pandas as pd
 from typing import Type
+import time
 
 from .strategy import Strategy
 from .logging import Logger
-from .data import DataObject, HistoricalDataObject
+from .data import DataObject
 from .event import AccountOpenEvent, AccountCloseEvent, SignalEvent
-from . import message
+from .portfolio.trade_record import TradeRecord
 from . import const
 from . import utils
 from .helpers import Signal
@@ -37,10 +38,6 @@ class Trader:
         self.socket.setsockopt(zmq.IDENTITY, self.strategy_name.encode())
         self.socket.connect(f'tcp://127.0.0.1:{config["manager_request_port"]}')
 
-        self.order_socket = zmq.Context().socket(zmq.DEALER)
-        self.order_socket.setsockopt(zmq.IDENTITY, self.strategy_name.encode())
-        self.order_socket.connect(f'tcp://127.0.0.1:{config["manager_order_port"]}')
-
     def set_tickers(self, tickers):
         self.tickers = tickers
 
@@ -61,23 +58,31 @@ class Trader:
         if self.broker is None:
             raise ValueError("Broker is not set")
 
+        wall_time_start = time.clock()
+
         self._set_data_obj()
         self.strategy = self.strategy_class(self.logger, self.data_obj)
         self.data_obj.set_look_back(self.strategy.look_back)
-        print(f'data object now is {self.data_obj.now}')
 
         signal = Signal(self.data_obj.tickers)
         while self.data_obj.update_bar():
             signal.reset()  # set all alphas to 0
             self.strategy.set_signal(signal)
-            self.order_socket.send_pyobj(SignalEvent(self.data_obj.now, self.strategy_name, signal))
+            self.socket.send_pyobj(SignalEvent(self.data_obj.now, self.strategy_name, signal))
+
+        wall_time_end = time.clock()
+        print(f'Wall time: {wall_time_end - wall_time_start}s')
 
         # self.logger.close()
 
-        if self.end_time is None:
+        if self.end_time is None:  # real-time
             self.socket.send_pyobj(AccountCloseEvent(pd.Timestamp.now(), self.strategy_name))
         else:
             self.socket.send_pyobj(AccountCloseEvent(self.end_time, self.strategy_name))
+
+        result = self.socket.recv_pyobj()  # type: TradeRecord
+        print(f'Final capital: {result.get_equity()}')
+        print(f'Book keeping time: {time.clock() - wall_time_end}s')
 
     def _set_data_obj(self):
         if self.tickers is None:

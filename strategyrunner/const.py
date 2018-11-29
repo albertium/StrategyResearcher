@@ -21,3 +21,8 @@ class Data(Enum):
 class Broker(Enum):
     SIMULATED = 'H'
     INTERACTIVE_BROKERS = 'IB'  # IB
+
+
+class Order(Enum):
+    LMT = 1
+    MKT = 2

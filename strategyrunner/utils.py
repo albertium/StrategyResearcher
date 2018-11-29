@@ -40,5 +40,5 @@ alphabets = list(string.digits + string.ascii_uppercase)
 
 
 def get_name_hash():
-    return ''.join(np.random.choice(alphabets, 8))
+    return ''.join(np.random.choice(alphabets, 5))
 

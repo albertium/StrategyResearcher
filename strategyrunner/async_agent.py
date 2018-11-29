@@ -16,6 +16,21 @@ class AsyncAgent(ABC):
     def _run(self):
         raise NotImplementedError
 
+    @staticmethod
+    async def coroutine_wrapper(coro, *args):
+        alive = True
+        while alive is True:
+            try:
+                alive = await coro(*args)
+            except Exception as e:
+                print('Caught exceptions:')
+                traceback.print_exc()
+
+    def run_coroutine(self, msg, coro, *args):
+        if msg:
+            print(msg)
+        asyncio.ensure_future(self.coroutine_wrapper(coro, *args))
+
     async def await_coroutine(self, coro, msg=''):
         if msg:
             print(msg)
