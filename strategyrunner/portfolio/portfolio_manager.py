@@ -4,13 +4,12 @@ import zmq
 import zmq.asyncio as zmqa
 from typing import Dict, Union
 import pickle
-from collections import deque
 
 from ..async_agent import AsyncAgent
 from ..data import DataObject
 from ..portfolio import TradeRecord
 from ..event import OrderEvent, FillEvent, QuoteEvent, AccountOpenEvent, AccountCloseEvent, SignalEvent, BaseEvent
-from ..helpers import Counter
+from ..logger import Logger
 from .. import utils
 from .. import const
 
@@ -23,45 +22,11 @@ class Account:
         self.count = 0  # for checking if fills are completed
 
 
-class BatchedQueue:
-    def __init__(self):
-        self.sids = {}
-        self.queues = {}
-        self._signal_ready = Counter()
-        self._queue_ready = Counter()
-
-    def put(self, signal: BaseEvent):
-        print(f'added {signal}')
-        self.queues.setdefault(signal.sid, deque()).append(signal)
-        self._signal_ready.inc()
-
-    def set_ready(self, sid):
-        self.sids[sid] = True
-        self._queue_ready.inc()
-
-    def delete(self, sid):
-        del self.sids[sid]
-        del self.queues[sid]
-
-    async def get(self):
-        await self._signal_ready.wait()
-        await self._queue_ready.wait()
-
-        print(f'items: {self.queues}')
-
-        for sid, queue in self.queues.items():
-            if self.sids[sid] is True and queue:
-                value = queue.popleft()
-                self._signal_ready.dec()
-                self._queue_ready.dec()
-                self.sids[sid] = False
-                return value
-
-
 class PortfolioManager(AsyncAgent):
     def __init__(self, config_file=None):
         super().__init__()
 
+        self.logger = Logger('PortfolioManager', False)
         config = utils.load_config(config_file)
         self.port = config['manager_request_port']
         self.data_port = config['data_server_request_port']
@@ -89,7 +54,7 @@ class PortfolioManager(AsyncAgent):
         event = pickle.loads(event)  # type: Union[AccountOpenEvent, AccountCloseEvent]
 
         if event.type == const.Event.ACCT_OPEN:  # create new account
-            print(f'Received request: {event.data_request} for {event.sid}')
+            self.logger.log_info(f'Received request: {event.data_request} for {event.sid}')
 
             if event.sid in self.accounts:
                 raise ValueError(f'Account {event.sid} already exists')
@@ -108,7 +73,7 @@ class PortfolioManager(AsyncAgent):
     async def handle_strategy_event(self, queue: asyncio.Queue, feedback: asyncio.Queue):
         event = await queue.get()  # type: Union[AccountOpenEvent, SignalEvent]
         if event.type != const.Event.SIGNAL:
-            print(event)
+            self.logger.log_info(event)
 
         if event.type == const.Event.ACCT_OPEN:
             await self.data_socket.send_pyobj(event.data_request)
@@ -119,7 +84,7 @@ class PortfolioManager(AsyncAgent):
             self.accounts[event.sid] = Account(event.timestamp, data_obj, event.capital)
 
             await self.socket.send_multipart([event.pid, pickle.dumps(dispatcher)])
-            print(f'Account "{event.sid}" created')
+            self.logger.log_info(f'Account "{event.sid}" created')
 
         elif event.type == const.Event.SIGNAL:
             if event.sid not in self.accounts:
@@ -135,20 +100,20 @@ class PortfolioManager(AsyncAgent):
             if order.added():
                 position = self.accounts[event.sid].position
 
-                print('############# PLAN #############')
+                self.logger.log_info('############# PLAN #############')
                 for ticker, (_, delta) in order.orders.items():
-                    print(f'{order.sid}: {ticker} ({position[ticker]} -> {position[ticker] + delta})')
-                print('################################\n')
+                    self.logger.log_info(f'{order.sid}: {ticker} ({position[ticker]} -> {position[ticker] + delta})')
+                self.logger.log_info('################################\n')
 
                 await self.event_queue.put(order)
                 filled = await feedback.get()
-                print(filled)
+                self.logger.log_info(filled)
                 position.update_from_fill(filled)
 
         elif event.type == const.Event.ACCT_CLOSE:
             self.socket.send_multipart([event.pid, pickle.dumps(self.accounts[event.sid].position)])
             del self.accounts[event.sid]
-            print(f'Account "{event.sid}" closed')
+            self.logger.log_info(f'Account "{event.sid}" closed')
             return False
 
         else:
@@ -158,7 +123,7 @@ class PortfolioManager(AsyncAgent):
 
     async def handle_events(self):
         event = await self.event_queue.get()  # type: Union[SignalEvent, FillEvent, QuoteEvent]
-        print(event)
+        self.logger.log_info(event)
 
         if event.type == const.Event.QUOTE:
             self.accounts[event.sid].position.take_snapshot(event.timestamp, event.quotes)
