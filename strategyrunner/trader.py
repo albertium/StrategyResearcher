@@ -6,7 +6,7 @@ from typing import Type
 import time
 
 from .strategy import Strategy
-from .logging import Logger
+from .logger import Logger
 from .data import DataObject
 from .event import AccountOpenEvent, AccountCloseEvent, SignalEvent
 from .portfolio.trade_record import TradeRecord
@@ -16,12 +16,13 @@ from .helpers import Signal
 
 
 class Trader:
-    def __init__(self, strategy_class: Type[Strategy], config_file=None):
+    def __init__(self, strategy_class: Type[Strategy], verbose=False, config_file=None):
+        self.logger = Logger(strategy_class.name)
+        self.verbose = verbose
 
         self.data_obj = None  # type: DataObject
         self.strategy_class = strategy_class
 
-        self.logger = Logger()
         self.orders_to_submit = queue.Queue()
         self.tickers = None
         self.start_time = None
@@ -31,7 +32,7 @@ class Trader:
         self.strategy = None
 
         self.strategy_name = strategy_class.name + '-' + utils.get_name_hash()
-        print(f'Executing strategy {self.strategy_name}')
+        self.logger.log_info(f'Executing strategy {self.strategy_name}')
 
         config = utils.load_config(config_file)
         self.socket = zmq.Context().socket(zmq.DEALER)
@@ -64,16 +65,18 @@ class Trader:
         self.strategy = self.strategy_class(self.logger, self.data_obj)
         self.data_obj.set_look_back(self.strategy.look_back)
 
+        # main signal generation loop
         signal = Signal(self.data_obj.tickers)
         while self.data_obj.update_bar():
             signal.reset()  # set all alphas to 0
             self.strategy.set_signal(signal)
-            self.socket.send_pyobj(SignalEvent(self.data_obj.now, self.strategy_name, signal))
+            signal_event = SignalEvent(self.data_obj.now, self.strategy_name, signal)
+            self.socket.send_pyobj(signal_event)
+            if self.verbose:
+                self.logger.log_info(signal_event)
 
         wall_time_end = time.time()
-        print(f'Wall time: {wall_time_end - wall_time_start}s')
-
-        # self.logger.close()
+        self.logger.log_info(f'Wall time: {wall_time_end - wall_time_start: .2f}s')
 
         if self.end_time is None:  # real-time
             self.socket.send_pyobj(AccountCloseEvent(pd.Timestamp.now(), self.strategy_name))
@@ -81,8 +84,10 @@ class Trader:
             self.socket.send_pyobj(AccountCloseEvent(self.end_time, self.strategy_name))
 
         result = self.socket.recv_pyobj()  # type: TradeRecord
-        print(f'Final capital: {result.get_equity()}')
-        print(f'Book keeping time: {time.time() - wall_time_end}s')
+        self.logger.log_info(f'Final capital: {result.get_equity()}')
+        self.logger.log_info(f'Book-keeping time: {time.time() - wall_time_end: .2f}s')
+
+        self.logger.close()
 
     def _set_data_obj(self):
         if self.tickers is None:
@@ -91,11 +96,11 @@ class Trader:
         event = AccountOpenEvent(self.start_time, self.strategy_name, 10000, self.broker, self.tickers,
                                  self.start_time, self.end_time)
 
-        print(f'Requesting data: {event.data_request}')
+        self.logger.log_info(f'Requesting data: {event.data_request}')
         self.socket.send_pyobj(event)
         self.data_obj = self.socket.recv_pyobj().dispatch()  # type: DataObject
 
         if self.data_obj.type == const.Data.SIMULATED:
-            print(f'Historical data object received with {self.data_obj.last_row} data points')
+            self.logger.log_info(f'Historical data object received with {self.data_obj.last_row} data points')
         else:
-            print('Data object received')
+            self.logger.log_info('Data object received')

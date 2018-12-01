@@ -10,6 +10,7 @@ import struct
 from ..async_agent import AsyncAgent
 from ..data import DataManager, HistoricalDataObject, RealTimeDataObject, Dispatcher
 from ..event import DataRequestEvent
+from ..logger import Logger
 from .. import utils
 from .. import const
 
@@ -41,6 +42,8 @@ class DataServer(AsyncAgent):
     def __init__(self, config_file=None):
         super().__init__()
 
+        self.logger = Logger('DataServer', False)
+
         config = utils.load_config(config_file)
         self.request_port = config['data_server_request_port']
         self.pub_port = config['data_server_broadcast_port']
@@ -61,26 +64,26 @@ class DataServer(AsyncAgent):
     async def handle_data_request(self):
         pid, _, request = await self.socket.recv_multipart()
         event = pickle.loads(request)
-        print(f'Request received from {pid}: {event}')
+        self.logger.log_info(f'Request received from {pid}: {event}')
         self.run_coroutine('', self.send_data_obj, pid, event)
         return True
 
     async def send_data_obj(self, cid: bytes, event: DataRequestEvent):
         if event.broker == const.Broker.SIMULATED:  # historical data
-            print(f'Loading historical data for {event.tickers} from {event.start_time} to {event.end_time}')
+            self.logger.log_info(f'Loading data for {event.tickers} from {event.start_time} to {event.end_time}')
             data = await self.loop.run_in_executor(self.executor, self.retrieve_data_from_db,
                                                    event.tickers, event.start_time, event.end_time)
             data_obj = Dispatcher(HistoricalDataObject, event.tickers, data=data)
 
         elif event.broker == const.Broker.INTERACTIVE_BROKERS:  # IB real time data
             self.tickers |= set(event.tickers)
-            print('Enlisted tickers: ', self.tickers)
+            self.logger.log_info(f'Enlisted tickers: {self.tickers}')
             data_obj = Dispatcher(RealTimeDataObject, event.tickers)
 
         else:
             raise ValueError('Unrecognized request')
         await self.socket.send_multipart([cid, b'', pickle.dumps(data_obj)])
-        print('Data object sent')
+        self.logger.log_info('Data object sent')
 
     async def broadcast_data(self):
         self.counter += 1

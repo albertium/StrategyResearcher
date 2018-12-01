@@ -1,7 +1,7 @@
 
 from abc import ABC, abstractmethod
 from ..data import DataObject
-from ..logging import Logger
+from ..logger import Logger
 from ..helpers import Signal
 
 

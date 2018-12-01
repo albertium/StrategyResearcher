@@ -25,12 +25,12 @@ class AsyncAgent(ABC):
     def run_coroutine(self, msg, coro, *args):
         if msg:
             print(msg)
-        asyncio.ensure_future(self.coroutine_wrapper(coro, *args))
+        return asyncio.ensure_future(self.coroutine_wrapper(coro, *args))
 
     def run_coroutine_threadsafe(self, msg, coro, *args):
         if msg:
             print(msg)
-        asyncio.run_coroutine_threadsafe(self.coroutine_wrapper(coro, *args), self.loop)
+        return asyncio.run_coroutine_threadsafe(self.coroutine_wrapper(coro, *args), self.loop)
 
     async def shutdown(self):
         print('Shutting down agent')
@@ -64,4 +64,6 @@ class AsyncAgent(ABC):
         for sig in signals:
             self.loop.add_signal_handler(sig, lambda s=sig: asyncio.run_coroutine_threadsafe(self.shutdown(), self.loop))
 
-        threading.Thread(target=self.loop.run_forever).start()
+        thread = threading.Thread(target=self.loop.run_forever)
+        thread.start()
+        return thread

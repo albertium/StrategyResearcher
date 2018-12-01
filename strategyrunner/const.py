@@ -26,3 +26,16 @@ class Broker(Enum):
 class Order(Enum):
     LMT = 1
     MKT = 2
+
+
+class Log(Enum):
+    ERROR = 1
+    WARNING = 2
+    INFO = 3
+    CLOSE = 4
+
+
+class Level(Enum):
+    CRITICAL = 1
+    INFO = 2
+    ALL = 3

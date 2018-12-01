@@ -1,6 +1,7 @@
 
 from pandas.tseries.offsets import DateOffset, BDay
 import dateutil.parser as du
+from pathlib import Path
 import json
 import os
 import pathlib
@@ -39,6 +40,14 @@ def load_config(file=None):
 alphabets = list(string.digits + string.ascii_uppercase)
 
 
-def get_name_hash():
-    return ''.join(np.random.choice(alphabets, 5))
+def get_name_hash(patch=5):
+    return ''.join(np.random.choice(alphabets, patch))
 
+
+def get_no_conflict_filename(filename):
+    filename = Path(filename)
+    for idx in range(10000):
+        new_file = filename / f'_{idx}'
+        if not new_file.exists():
+            break
+    return new_file

@@ -1,18 +1,44 @@
 
 import asyncio
+import threading
+import queue
+import time
 
 
-async def print_number(n):
-    print(n)
-    await asyncio.sleep(0.5)
+loop = asyncio.get_event_loop()
+# q = asyncio.Queue()
+q = queue.Queue()
+event = threading.Event()
 
 
-async def spawn():
-    print('alive')
-    await asyncio.sleep(1)
-    asyncio.ensure_future(print_number(1))
-    asyncio.ensure_future(print_number(2))
+async def printing():
+    while True:
+        # msg = await q.get()
+        msg = q.get()
+        event.set()
+        print(msg)
+
+        if msg == 'closed':
+            break
+
+    loop.stop()
 
 
-asyncio.ensure_future(spawn())
-asyncio.get_event_loop().run_forever()
+def runner():
+    loop.run_forever()
+    print('we r done')
+
+
+asyncio.run_coroutine_threadsafe(printing(), loop)
+t = threading.Thread(target=runner)
+t.start()
+
+for i in range(5):
+    # queue.put_nowait(i)
+    q.put(i)
+q.put_nowait('closed')
+
+t.join()
+print(event.is_set())
+# print('finished')
+
