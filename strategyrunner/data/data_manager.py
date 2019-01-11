@@ -35,6 +35,9 @@ class DataManager:
             print(self.sqlite_file)
             self.conn = sqlite3.connect(self.sqlite_file)
             self.cur = self.conn.cursor()
+
+            if not self._table_exists('SourceRank'):
+                self._initialize_source_rank_table()
             self.sources = self._get_list_from_db("SourceRank", "source")
             if set(self.sources) != set(source_map.keys()):
                 raise ValueError("sources and source_map doesn't match")
@@ -100,6 +103,18 @@ class DataManager:
             )
         """)
         self.conn.commit()
+
+    def _initialize_source_rank_table(self):
+        self.conn.execute(f'''
+            create table if not exists SourceRank (
+                source Text,
+                rank Integer Not Null Unique,
+                primary key(source)
+            )
+        ''')
+        self.conn.commit()
+        ranks = pd.DataFrame({'source': ['tiingo', 'stooq', 'av-daily', 'iex'], 'rank': [1, 2, 3, 4]})
+        ranks.to_sql('SourceRank', con=self.conn, index=False, if_exists='append')
 
     def _update_calendar(self):
         mcal_name = 'MarketCalendarUS'
