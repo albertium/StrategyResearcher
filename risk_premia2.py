@@ -38,33 +38,53 @@ def calculate_performance(rets: pd.DataFrame, weights: pd.DataFrame):
     return {'cagr': cagr, 'vol': vol, 'sharpe': sharpe, 'trade_size': trade_size}
 
 
-def get_inverse_vol_weights(rets: pd.DataFrame, lookback=90):
-    sigmas = rets.rolling(lookback).std().dropna()
-    weights = 1 / sigmas
-    return weights.div(weights.sum(axis=1), axis=0)
+class AlphaCalculator:
+    def __init__(self, prices: pd.DataFrame):
+        self.prices = prices
+        self.normalized_prices = prices.div(prices.iloc[0], axis=0)
+        self.rets = prices.pct_change()
+
+    # --- utils ---
+    @staticmethod
+    def convert_zscore(self, alpha: pd.DataFrame, gaussian=False):
+        tmp = alpha.sub(alpha.mean(axis=1), axis=0).div(alpha.std(axis=1), axis=0)
+        if gaussian:
+            return tmp.apply(norm.cdf)
+        return tmp
+
+    @staticmethod
+    def combine_weights(wgt1: pd.DataFrame, wgt2: pd.DataFrame, shrinkage=1):
+        common_index = wgt1.index.intersection(wgt2.index)
+        wgt = wgt1.loc[common_index] * (1 + shrinkage * wgt2.loc[common_index])
+        return wgt.div(wgt.sum(axis=1), axis=0)
+
+    # --- base inverse volatility ---
+    def get_inverse_vol_weights(self, lookback=90):
+        sigmas = self.rets.rolling(lookback).std().dropna()
+        weights = 1 / sigmas
+        return weights.div(weights.sum(axis=1), axis=0)
+
+    def get_correlation_adjustment(self, lookback=90):
+        cors = self.rets.rolling(lookback).corr().dropna().groupby(level=0).mean()
+        scores = 1 - cors.sub(cors.mean(axis=1), axis=0).div(cors.std(axis=1), axis=0).apply(norm.cdf)
+        return scores.div(scores.sum(axis=1), axis=0) - 1 / scores.shape[1]
+
+    # --- momentum ---
+    def get_momentum_weight(self, lookback=66):
+        pass
 
 
-def get_correlation_adjustement(rets: pd.DataFrame, lookback=90):
-    cors = rets.rolling(lookback).corr().dropna().groupby(level=0).mean()
-    scores = 1 - cors.sub(cors.mean(axis=1), axis=0).div(cors.std(axis=1), axis=0).apply(norm.cdf)
-    return scores.div(scores.sum(axis=1), axis=0) - 1 / scores.shape[1]
-
-
-def combine_weights(wgt1: pd.DataFrame, wgt2: pd.DataFrame, shrinkage=1):
-    common_index = wgt1.index.intersection(wgt2.index)
-    wgt = wgt1.loc[common_index] * (1 + shrinkage * wgt2.loc[common_index])
-    return wgt.div(wgt.sum(axis=1), axis=0)
 
 
 tickers = ['VTI', 'EFA', 'IEF', 'TLT']
 with DataManager('./data/test.db') as db:
     data = db.get_data(tickers, '2010-01-01')  # type: pd.DataFrame
 
-rets = data.close.pct_change()
-wgt1 = get_inverse_vol_weights(rets)
-wgt2 = get_correlation_adjustement(rets, lookback=90)
-final_weight = combine_weights(wgt1, wgt2, shrinkage=1)
+alphas = AlphaCalculator(data.close)
+wgt1 = alphas.get_inverse_vol_weights()
+wgt2 = alphas.get_correlation_adjustment(lookback=90)
+final_weight = alphas.combine_weights(wgt1, wgt2, shrinkage=1)
 down_sampled = final_weight.iloc[5::22]
 
-res = calculate_performance(rets, down_sampled)
+res = calculate_performance(data.close.pct_change(), down_sampled)
 print(res)
